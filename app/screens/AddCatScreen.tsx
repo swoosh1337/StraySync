@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,9 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
+  LayoutChangeEvent,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,6 +35,8 @@ type AddCatScreenRouteProp = RouteProp<RootStackParamList, 'AddCat'>;
 const AddCatScreen: React.FC = () => {
   const navigation = useNavigation<AddCatScreenNavigationProp>();
   const route = useRoute<AddCatScreenRouteProp>();
+  const scrollViewRef = useRef<ScrollView>(null);
+  const descriptionInputRef = useRef<TextInput>(null);
   
   const [description, setDescription] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -41,8 +46,10 @@ const AddCatScreen: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [inputY, setInputY] = useState(0);
 
-  // Get the current user ID and location if needed
+  // Get the current user ID and location
   useEffect(() => {
     const initialize = async () => {
       // Get user ID or retrieve anonymous ID
@@ -169,6 +176,35 @@ const AddCatScreen: React.FC = () => {
     });
   };
 
+  // Add keyboard listeners
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+        // We'll handle scrolling in the onFocus event of the TextInput
+      }
+    );
+    
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
+  // Function to measure the position of the description input
+  const measureInputPosition = (event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    setInputY(y + height);
+  };
+
   // Submit the cat sighting
   const handleSubmit = async () => {
     if (!imageUri) {
@@ -188,7 +224,7 @@ const AddCatScreen: React.FC = () => {
     console.log('Location:', JSON.stringify(location));
 
     try {
-      // First, try to compress the image if it's too large
+      // Try to compress the image if it's too large
       let finalImageUri = imageUri;
       let imageUrl = '';
       let uploadSuccess = false;
@@ -213,7 +249,7 @@ const AddCatScreen: React.FC = () => {
         
         // Try with the fallback method
         console.log('Using fallback image service...');
-        imageUrl = catService.uploadToPublicService();
+        imageUrl = await catService.uploadToPublicService();
         console.log('Fallback image URL:', imageUrl);
         uploadSuccess = true;
       }
@@ -237,18 +273,19 @@ const AddCatScreen: React.FC = () => {
         if (newCat) {
           console.log('Cat added successfully:', newCat.id);
           
+          // Navigate back immediately to refresh the map
+          navigation.goBack();
+          
           // Show different messages based on whether we used a fallback image
           if (imageUrl.includes('placekitten.com')) {
             Alert.alert(
               'Partial Success',
-              'Cat sighting was added but we had to use a placeholder image. The original image could not be uploaded.',
-              [{ text: 'OK', onPress: () => navigation.goBack() }]
+              'Cat sighting was added but we had to use a placeholder image. The original image could not be uploaded.'
             );
           } else {
             Alert.alert(
               'Success',
-              'Cat sighting added successfully!',
-              [{ text: 'OK', onPress: () => navigation.goBack() }]
+              'Cat sighting added successfully!'
             );
           }
         } else {
@@ -266,96 +303,131 @@ const AddCatScreen: React.FC = () => {
     }
   };
 
+  // Function to dismiss keyboard
+  const dismissKeyboard = () => {
+    Keyboard.dismiss();
+  };
+
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView style={styles.container}>
-        <View style={styles.mapContainer}>
-          <MapView
-            style={styles.map}
-            provider={undefined}
-            initialRegion={{
-              latitude: location.latitude,
-              longitude: location.longitude,
-              latitudeDelta: 0.005,
-              longitudeDelta: 0.005,
-            }}
-          >
-            <Marker
-              coordinate={location}
-              draggable
-              onDragEnd={handleMarkerDrag}
-            >
-              <Ionicons name="paw" size={30} color="#FF5722" />
-            </Marker>
-          </MapView>
-          <Text style={styles.mapInstructions}>
-            Drag the marker to the exact location where you spotted the cat
-          </Text>
-        </View>
-
-        <View style={styles.imageSection}>
-          <Text style={styles.sectionTitle}>Add a Photo</Text>
-          {imageUri ? (
-            <View style={styles.imagePreviewContainer}>
-              <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-              <TouchableOpacity
-                style={styles.changeImageButton}
-                onPress={pickImage}
-              >
-                <Text style={styles.changeImageText}>Change Photo</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.imageButtonsContainer}>
-              <TouchableOpacity
-                style={styles.imageButton}
-                onPress={takePhoto}
-              >
-                <Ionicons name="camera" size={24} color="white" />
-                <Text style={styles.imageButtonText}>Take Photo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.imageButton}
-                onPress={pickImage}
-              >
-                <Ionicons name="images" size={24} color="white" />
-                <Text style={styles.imageButtonText}>Choose from Gallery</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.formSection}>
-          <Text style={styles.sectionTitle}>Description (Optional)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Add any details about the cat (color, size, behavior, etc.)"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            numberOfLines={4}
-          />
-        </View>
-
-        <TouchableOpacity
-          style={styles.submitButton}
-          onPress={handleSubmit}
-          disabled={loading}
+    <TouchableWithoutFeedback onPress={dismissKeyboard}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
+      >
+        <ScrollView 
+          ref={scrollViewRef}
+          style={styles.container}
+          contentContainerStyle={{ paddingBottom: 100 }}
+          keyboardShouldPersistTaps="handled"
         >
-          {loading ? (
-            <ActivityIndicator color="white" />
-          ) : (
-            <>
-              <Ionicons name="paw" size={20} color="white" />
-              <Text style={styles.submitButtonText}>Add Cat Sighting</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <View style={styles.mapContainer}>
+            <MapView
+              style={styles.map}
+              provider={undefined}
+              initialRegion={{
+                latitude: location.latitude,
+                longitude: location.longitude,
+                latitudeDelta: 0.005,
+                longitudeDelta: 0.005,
+              }}
+            >
+              <Marker
+                coordinate={location}
+                draggable
+                onDragEnd={handleMarkerDrag}
+              >
+                <Ionicons name="paw" size={30} color="#FF5722" />
+              </Marker>
+            </MapView>
+            <Text style={styles.mapInstructions}>
+              Drag the marker to the exact location where you spotted the cat
+            </Text>
+          </View>
+
+          <View style={styles.imageSection}>
+            <Text style={styles.sectionTitle}>Add a Photo</Text>
+            {imageUri ? (
+              <View style={styles.imagePreviewContainer}>
+                <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+                <TouchableOpacity
+                  style={styles.changeImageButton}
+                  onPress={pickImage}
+                >
+                  <Text style={styles.changeImageText}>Change Photo</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.imageButtonsContainer}>
+                <TouchableOpacity
+                  style={styles.imageButton}
+                  onPress={takePhoto}
+                >
+                  <Ionicons name="camera" size={24} color="white" />
+                  <Text style={styles.imageButtonText}>Take Photo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.imageButton}
+                  onPress={pickImage}
+                >
+                  <Ionicons name="images" size={24} color="white" />
+                  <Text style={styles.imageButtonText}>Choose from Gallery</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          <View 
+            style={styles.formSection}
+            onLayout={measureInputPosition}
+          >
+            <Text style={styles.sectionTitle}>Description (Optional)</Text>
+            <TextInput
+              ref={descriptionInputRef}
+              style={styles.input}
+              placeholder="Add any details about the cat (color, size, behavior, etc.)"
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              onFocus={() => {
+                // Scroll to the measured position with a slight delay
+                setTimeout(() => {
+                  if (scrollViewRef.current && inputY > 0) {
+                    // Use a smaller offset to reduce scrolling amount
+                    // Different offset for iOS and Android
+                    const offset = Platform.OS === 'ios' ? 80 : 50;
+                    scrollViewRef.current.scrollTo({ 
+                      y: inputY - offset, // Reduced offset for less aggressive scrolling
+                      animated: true 
+                    });
+                  }
+                }, 300);
+              }}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              keyboardVisible && { marginBottom: 120 } // Reduced extra margin when keyboard is visible
+            ]}
+            onPress={handleSubmit}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <>
+                <Ionicons name="paw" size={24} color="white" />
+                <Text style={styles.submitButtonText}>Add Cat Sighting</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -447,14 +519,18 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
+    marginBottom: 30,
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 5,
-    padding: 10,
-    minHeight: 100,
+    padding: 15,
+    minHeight: 150,
     textAlignVertical: 'top',
+    fontSize: 16,
+    backgroundColor: '#f9f9f9',
+    marginTop: 10,
   },
   submitButton: {
     backgroundColor: '#4CAF50',
@@ -469,6 +545,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
+    marginBottom: 80,
   },
   submitButtonText: {
     color: 'white',

@@ -48,73 +48,47 @@ const MapScreen: React.FC = () => {
   const fetchCats = async () => {
     try {
       console.log('Fetching cats from database...');
+      setLoading(true);
       const fetchedCats = await catService.getCats();
       console.log(`Fetched ${fetchedCats.length} cats from database`);
       
-      // Log details about each cat for debugging
-      fetchedCats.forEach((cat, index) => {
-        console.log(`Cat ${index + 1}/${fetchedCats.length}: ${JSON.stringify({
-          id: cat.id,
-          user_id: cat.user_id,
-          latitude: cat.latitude,
-          longitude: cat.longitude,
-          spotted_at: cat.spotted_at,
-          has_image: !!cat.image_url,
-          description_length: cat.description?.length || 0
-        })}`);
-      });
-      
-      // Check if any cats were actually removed (compare with current state)
-      const currentIds = new Set(cats.map(cat => cat.id));
-      const newIds = new Set(fetchedCats.map(cat => cat.id));
-      
-      // Find removed cats
-      const removedIds = [...currentIds].filter(id => !newIds.has(id));
-      if (removedIds.length > 0) {
-        console.log(`Detected ${removedIds.length} removed cats:`, removedIds);
-      }
-      
-      // Find new cats
-      const addedIds = [...newIds].filter(id => !currentIds.has(id));
-      if (addedIds.length > 0) {
-        console.log(`Detected ${addedIds.length} new cats:`, addedIds);
-      }
-      
       // Update state with new cats
       setCats(fetchedCats);
-      
-      // If we have a map reference and there are new cats, adjust the map to show them
-      if (mapRef.current && addedIds.length > 0 && currentLocation) {
-        // Find the most recently added cat
-        const newestCat = fetchedCats.find(cat => addedIds.includes(cat.id));
-        if (newestCat) {
-          console.log(`Adjusting map to show newest cat: ${newestCat.id}`);
-          
-          // Create a region that includes both the user's location and the new cat
-          const midLat = (currentLocation.latitude + newestCat.latitude) / 2;
-          const midLong = (currentLocation.longitude + newestCat.longitude) / 2;
-          
-          // Calculate the span to include both points with some padding
-          const latDelta = Math.abs(currentLocation.latitude - newestCat.latitude) * 1.5 + 0.01;
-          const longDelta = Math.abs(currentLocation.longitude - newestCat.longitude) * 1.5 + 0.01;
-          
-          // Animate to the new region
-          mapRef.current.animateToRegion({
-            latitude: midLat,
-            longitude: midLong,
-            latitudeDelta: Math.max(0.01, latDelta),
-            longitudeDelta: Math.max(0.01, longDelta)
-          }, 1000);
-        }
-      }
+      setLoading(false);
       
       return fetchedCats;
     } catch (error) {
       console.error('Error fetching cats:', error);
       Alert.alert('Error', 'Failed to load cat sightings');
-      return [];
-    } finally {
       setLoading(false);
+      return [];
+    }
+  };
+
+  // Add a new cat directly to the state (for immediate display)
+  const addCatToState = (newCat: Cat) => {
+    console.log('Adding new cat directly to state:', newCat.id);
+    setCats(prevCats => [...prevCats, newCat]);
+    
+    // If we have a map reference, adjust the map to show the new cat
+    if (mapRef.current && currentLocation) {
+      console.log(`Adjusting map to show new cat: ${newCat.id}`);
+      
+      // Create a region that includes both the user's location and the new cat
+      const midLat = (currentLocation.latitude + newCat.latitude) / 2;
+      const midLong = (currentLocation.longitude + newCat.longitude) / 2;
+      
+      // Calculate the span to include both points with some padding
+      const latDelta = Math.abs(currentLocation.latitude - newCat.latitude) * 1.5 + 0.01;
+      const longDelta = Math.abs(currentLocation.longitude - newCat.longitude) * 1.5 + 0.01;
+      
+      // Animate to the new region
+      mapRef.current.animateToRegion({
+        latitude: midLat,
+        longitude: midLong,
+        latitudeDelta: Math.max(0.01, latDelta),
+        longitudeDelta: Math.max(0.01, longDelta)
+      }, 1000);
     }
   };
 

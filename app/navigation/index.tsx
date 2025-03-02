@@ -4,13 +4,13 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 
-// Import screens (we'll create these next)
+
 import MapScreen from '../screens/MapScreen';
 import AddCatScreen from '../screens/AddCatScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CatDetailsScreen from '../screens/CatDetailsScreen';
 
-// Define the types for our navigation parameters
+// types for navigation parameters
 export type RootStackParamList = {
   Main: undefined;
   CatDetails: { catId: string };
@@ -22,11 +22,11 @@ export type MainTabParamList = {
   Settings: undefined;
 };
 
-// Create the navigators
+// create the navigators
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-// Main tab navigator
+// main tab navigator
 const MainTabNavigator = () => {
   return (
     <Tab.Navigator

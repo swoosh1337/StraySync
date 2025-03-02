@@ -503,7 +503,7 @@ export const catService = {
   },
   
   // Fallback function that returns a placeholder cat image
-  uploadToPublicService(): string {
+  async uploadToPublicService(): Promise<string> {
     // For demo purposes, return a random cat image from placekitten
     const width = Math.floor(Math.random() * 300) + 200;
     const height = Math.floor(Math.random() * 300) + 200;
@@ -783,6 +783,19 @@ export const catService = {
         return false;
       }
       
+      // Get the cat details to retrieve the image URL
+      const { data: cat, error: fetchError } = await supabase
+        .from('cats')
+        .select('image_url')
+        .eq('id', catId)
+        .single();
+      
+      if (fetchError) {
+        console.error('Error fetching cat details for deletion:', fetchError);
+        return false;
+      }
+      
+      // Delete the cat from the database
       const { error } = await supabase
         .from('cats')
         .delete()
@@ -794,9 +807,179 @@ export const catService = {
         return false;
       }
       
+      // If cat was deleted successfully, also delete the image
+      if (cat && cat.image_url) {
+        await this.deleteImageFromStorage(cat.image_url);
+      }
+      
       return true;
     } catch (error: any) {
       console.error('Error in deleteCat:', error.message || error);
+      return false;
+    }
+  },
+  
+  // Delete an image from storage
+  async deleteImageFromStorage(imageUrl: string): Promise<boolean> {
+    try {
+      console.log('Attempting to delete image from URL:', imageUrl);
+      
+      // Skip deletion for placeholder images
+      if (!imageUrl || imageUrl.includes('placekitten.com')) {
+        console.log('Skipping deletion of placeholder or empty image URL');
+        return true;
+      }
+
+      // Try multiple methods to extract the filename
+      let fileName = '';
+      
+      // Method 1: Extract from URL path
+      try {
+        // First try to find the bucket name in the URL
+        const bucketIndex = imageUrl.indexOf('cat-images');
+        if (bucketIndex !== -1) {
+          // Extract everything after the bucket name
+          const afterBucket = imageUrl.substring(bucketIndex + 'cat-images'.length);
+          
+          // Remove any query parameters
+          let extractedName = afterBucket.split('?')[0];
+          
+          // Remove any leading slashes
+          extractedName = extractedName.startsWith('/') ? extractedName.substring(1) : extractedName;
+          
+          if (extractedName) {
+            fileName = extractedName;
+            console.log(`Method 1: Extracted filename: ${fileName}`);
+          }
+        }
+      } catch (extractError) {
+        console.error('Error in filename extraction method 1:', extractError);
+      }
+      
+      // Method 2: Just take the last part of the URL
+      if (!fileName) {
+        try {
+          const urlParts = imageUrl.split('/');
+          let extractedName = urlParts[urlParts.length - 1];
+          
+          // Remove any query parameters
+          extractedName = extractedName.split('?')[0];
+          
+          if (extractedName) {
+            fileName = extractedName;
+            console.log(`Method 2: Extracted filename: ${fileName}`);
+          }
+        } catch (extractError) {
+          console.error('Error in filename extraction method 2:', extractError);
+        }
+      }
+      
+      // If we still don't have a filename, try one more method
+      if (!fileName) {
+        try {
+          // Try to match a pattern like: anonymous-xyz-1234567890.jpg
+          const matches = imageUrl.match(/([a-zA-Z0-9-]+\.[a-zA-Z0-9]+)($|\?)/);
+          if (matches && matches[1]) {
+            fileName = matches[1];
+            console.log(`Method 3: Extracted filename: ${fileName}`);
+          }
+        } catch (extractError) {
+          console.error('Error in filename extraction method 3:', extractError);
+        }
+      }
+      
+      if (!fileName) {
+        console.error('Could not extract filename from URL using any method:', imageUrl);
+        return false;
+      }
+      
+      console.log(`Final extracted filename: ${fileName}`);
+      console.log(`Deleting image from storage bucket...`);
+      
+      // List files in the bucket to verify the file exists
+      const { data: files, error: listError } = await supabase.storage
+        .from('cat-images')
+        .list('', { limit: 100 });
+        
+      if (listError) {
+        console.error('Error listing files in bucket:', listError);
+      } else {
+        console.log(`Found ${files.length} files in bucket`);
+        
+        // Log all files for debugging
+        console.log('Files in bucket:');
+        files.forEach(file => {
+          console.log(`- ${file.name}`);
+        });
+        
+        const fileExists = files.some(f => f.name === fileName);
+        console.log(`File ${fileName} exists in bucket: ${fileExists}`);
+        
+        if (!fileExists) {
+          console.log('File not found in bucket, might have been deleted already');
+          return true;
+        }
+      }
+      
+      // Attempt to delete the file
+      console.log(`Attempting primary deletion method for ${fileName}...`);
+      const { data, error } = await supabase.storage
+        .from('cat-images')
+        .remove([fileName]);
+      
+      if (error) {
+        console.error('Error deleting image from storage:', error);
+        
+        // Try with a different path format
+        console.log('Trying alternative deletion method...');
+        const { error: altError } = await supabase.storage
+          .from('cat-images')
+          .remove([`/${fileName}`]);
+          
+        if (altError) {
+          console.error('Alternative deletion method also failed:', altError);
+          return false;
+        } else {
+          console.log(`Successfully deleted image ${fileName} using alternative method`);
+        }
+      } else {
+        console.log(`Successfully deleted image ${fileName} from storage`);
+      }
+      
+      // Verify deletion by listing files again
+      console.log('Verifying deletion...');
+      const { data: filesAfter, error: listAfterError } = await supabase.storage
+        .from('cat-images')
+        .list('', { limit: 100 });
+        
+      if (listAfterError) {
+        console.error('Error listing files after deletion:', listAfterError);
+      } else {
+        const fileStillExists = filesAfter.some(f => f.name === fileName);
+        console.log(`After deletion, file ${fileName} still exists: ${fileStillExists}`);
+        
+        if (fileStillExists) {
+          console.log('WARNING: File still appears in listing after deletion.');
+          console.log('This might be due to caching or RLS policies.');
+          console.log('The file may actually be deleted but still showing in the listing.');
+          
+          // Try one more time with a delay
+          console.log('Waiting 2 seconds and trying one more deletion...');
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          const { error: finalError } = await supabase.storage
+            .from('cat-images')
+            .remove([fileName]);
+            
+          if (!finalError) {
+            console.log('Final deletion attempt completed without errors');
+          }
+        }
+      }
+      
+      return true;
+    } catch (error: any) {
+      console.error('Error in deleteImageFromStorage:', error.message || error);
       return false;
     }
   },
@@ -840,7 +1023,7 @@ export const catService = {
         // Verify the cat exists before deletion
         const { data: existingCat, error: checkError } = await supabase
           .from('cats')
-          .select('id')
+          .select('id, image_url')
           .eq('id', cat.id)
           .single();
           
@@ -858,6 +1041,9 @@ export const catService = {
           console.log(`Cat ${cat.id} no longer exists, skipping deletion`);
           continue;
         }
+        
+        // Store the image URL before deletion
+        const imageUrl = existingCat.image_url;
         
         // Perform the deletion
         const { error } = await supabase
@@ -881,6 +1067,12 @@ export const catService = {
           if (verifyError && verifyError.code === 'PGRST116') {
             console.log(`Verified cat ${cat.id} was deleted (not found)`);
             deletedCatIds.push(cat.id);
+            
+            // Delete the image from storage
+            if (imageUrl) {
+              const imageDeleted = await this.deleteImageFromStorage(imageUrl);
+              console.log(`Image deletion for cat ${cat.id}: ${imageDeleted ? 'successful' : 'failed'}`);
+            }
           } else if (checkDeleted) {
             console.error(`DELETION FAILED: Cat ${cat.id} still exists in database after deletion!`);
             failedDeletions.push(cat.id);
@@ -888,6 +1080,12 @@ export const catService = {
             // This shouldn't happen, but just in case
             console.log(`Cat ${cat.id} appears to be deleted but verification was inconclusive`);
             deletedCatIds.push(cat.id);
+            
+            // Delete the image from storage
+            if (imageUrl) {
+              const imageDeleted = await this.deleteImageFromStorage(imageUrl);
+              console.log(`Image deletion for cat ${cat.id}: ${imageDeleted ? 'successful' : 'failed'}`);
+            }
           }
         }
       }

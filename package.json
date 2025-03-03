@@ -7,9 +7,15 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "setup-db": "node setup-supabase.js",
-    "fix-storage": "node fix-storage.js",
-    "test-upload": "node test-image-upload.js"
+    "setup-db": "node database/scripts/setup-supabase.js",
+    "fix-storage": "node database/scripts/fix-storage.js",
+    "fix-rls": "node database/scripts/fix-rls.js",
+    "test-upload": "node database/scripts/test-image-upload.js",
+    "delete-file": "node database/utils/delete-specific-file.js",
+    "db": "node database/db-cli.js"
+  },
+  "bin": {
+    "db-cli": "./database/db-cli.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",

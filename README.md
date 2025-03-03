@@ -19,6 +19,24 @@ A React Native mobile app that helps users locate and track stray cats in their 
 - React Native Maps
 - Expo Location & Notifications
 
+## Project Structure
+
+- **app/**: Main application code
+  - **components/**: Reusable UI components
+  - **contexts/**: React context providers
+  - **navigation/**: Navigation configuration
+  - **screens/**: Application screens
+  - **services/**: Service modules for API, storage, location, etc.
+  - **types/**: TypeScript type definitions
+
+- **database/**: Database-related files and scripts
+  - **schemas/**: SQL schema definitions
+  - **migrations/**: SQL migration files
+  - **scripts/**: Database setup and maintenance scripts
+  - **utils/**: Database utility scripts
+
+- **assets/**: Static assets like images and fonts
+
 ## Setup Instructions
 
 ### Prerequisites
@@ -35,12 +53,12 @@ A React Native mobile app that helps users locate and track stray cats in their 
 2. Choose one of the following SQL setup options:
 
    **Option 1 (Simple Setup - Recommended)**: 
-   - Copy the contents of `simple-setup.sql`
+   - Copy the contents of `database/schemas/simple-setup.sql`
    - Run it in the Supabase SQL Editor
    - This creates the basic tables and functions without PostGIS dependencies
 
    **Option 2 (Advanced Setup - If your Supabase instance supports PostGIS)**:
-   - Copy the contents of `direct-setup-fixed.sql`
+   - Copy the contents of `database/schemas/direct-setup-fixed.sql`
    - Run it in the Supabase SQL Editor
    - This creates tables with spatial indexing for more efficient location queries
 
@@ -86,7 +104,7 @@ A React Native mobile app that helps users locate and track stray cats in their 
 
 If you encounter errors with SQL commands:
 
-1. Try the `simple-setup.sql` file which has fewer dependencies
+1. Try the `database/schemas/simple-setup.sql` file which has fewer dependencies
 2. Run each SQL command separately in the Supabase SQL Editor
 3. Check if your Supabase instance supports the PostGIS extension
 
@@ -96,37 +114,12 @@ If you encounter errors with the storage bucket or image uploads:
 
 1. Run the provided fix script:
    ```
-   node fix-storage.js
+   npm run fix-storage
    ```
 
 2. If that doesn't work, manually fix the storage bucket in the Supabase SQL Editor:
    - Go to the SQL Editor in your Supabase dashboard
-   - Run the following SQL commands:
-   ```sql
-   -- Make sure the bucket exists and is public
-   UPDATE storage.buckets 
-   SET public = true 
-   WHERE name = 'cat-images';
-
-   -- Create the bucket if it doesn't exist
-   INSERT INTO storage.buckets (id, name, public) 
-   SELECT 'cat-images', 'cat-images', true
-   WHERE NOT EXISTS (SELECT 1 FROM storage.buckets WHERE name = 'cat-images');
-
-   -- Create policies for public access
-   CREATE POLICY "Public Access" ON storage.objects 
-   FOR SELECT USING (bucket_id = 'cat-images');
-
-   CREATE POLICY "Anyone can upload" ON storage.objects 
-   FOR INSERT WITH CHECK (bucket_id = 'cat-images');
-
-   CREATE POLICY "Anyone can update own images" ON storage.objects 
-   FOR UPDATE USING (bucket_id = 'cat-images')
-   WITH CHECK (true);
-
-   -- Enable RLS
-   ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-   ```
+   - Run the SQL commands from `database/migrations/fix-storage-policies.sql`
 
 3. Verify the bucket exists in the Storage section of your Supabase dashboard
 4. Make sure the bucket is set to public access
@@ -138,7 +131,7 @@ To verify that image uploads are working correctly:
 
 1. Run the test script:
    ```
-   node test-image-upload.js
+   npm run test-upload
    ```
 
 2. This script will:
@@ -154,6 +147,17 @@ To verify that image uploads are working correctly:
    - Storage bucket permissions
    - Row Level Security (RLS) policies
    - Authentication settings
+
+### Row Level Security Issues
+
+If you encounter issues with Row Level Security (RLS) policies:
+
+1. Run the fix script:
+   ```
+   npm run fix-rls
+   ```
+
+2. Or manually apply the SQL commands from `database/migrations/fix-rls-policies.sql`
 
 ## Contributing
 

@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Linking,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -100,6 +102,97 @@ const SettingsScreen: React.FC = () => {
     } else {
       setIsBackgroundTrackingEnabled(false);
     }
+  };
+
+  // Add these functions to handle button presses
+  const handleSupportPress = () => {
+    // List of organizations that support stray cats
+    const supportOptions = [
+      { name: 'ASPCA', url: 'https://www.aspca.org/donate' },
+      { name: 'Best Friends Animal Society', url: 'https://bestfriends.org/donate' },
+      { name: 'Alley Cat Allies', url: 'https://www.alleycat.org/ways-to-give/' },
+      { name: 'Local Animal Shelter', url: 'https://www.petfinder.com/animal-shelters-and-rescues/search/' }
+    ];
+    
+    // Show an alert with options
+    Alert.alert(
+      'Support Stray Cats',
+      'Choose an organization to donate to:',
+      [
+        ...supportOptions.map(option => ({
+          text: option.name,
+          onPress: () => Linking.openURL(option.url)
+        })),
+        { 
+          text: 'Cancel', 
+          style: 'cancel' as const
+        }
+      ]
+    );
+  };
+
+  const handleContactPress = () => {
+    // Options for contacting
+    const contactOptions = [
+      { 
+        name: 'Email', 
+        action: () => {
+          const email = 'support@straysync.com';
+          const subject = 'StraySync App Feedback';
+          const body = 'Hello StraySync team,\n\n';
+          
+          let url = '';
+          if (Platform.OS === 'ios') {
+            url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+          } else {
+            url = `mailto:${email}?subject=${subject}&body=${body}`;
+          }
+          
+          Linking.openURL(url)
+            .catch(err => {
+              Alert.alert('Error', 'Could not open email client. Please send an email to support@straysync.com');
+            });
+        }
+      },
+      {
+        name: 'Website',
+        action: () => Linking.openURL('https://straysync.com/contact')
+          .catch(err => {
+            Alert.alert('Error', 'Could not open the website. Please try again later.');
+          })
+      },
+      {
+        name: 'Social Media',
+        action: () => {
+          Alert.alert(
+            'Social Media',
+            'Follow us on:',
+            [
+              { text: 'Twitter', onPress: () => Linking.openURL('https://twitter.com/straysync') },
+              { text: 'Instagram', onPress: () => Linking.openURL('https://instagram.com/straysync') },
+              { text: 'Facebook', onPress: () => Linking.openURL('https://facebook.com/straysync') },
+              { text: 'Cancel', style: 'cancel' as const }
+            ]
+          );
+        }
+      }
+    ];
+    
+    // Show an alert with options
+    Alert.alert(
+      'Contact Us',
+      'How would you like to reach us?',
+      [
+        ...contactOptions.map(option => ({
+          text: option.name,
+          onPress: option.action
+        })),
+        { 
+          text: 'Cancel', 
+          style: 'cancel' as const
+        }
+      ]
+    );
   };
 
   return (
@@ -206,19 +299,25 @@ const SettingsScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>About</Text>
         
         <View style={styles.aboutContainer}>
-          <Text style={styles.appName}>Stray Cat Finder</Text>
+          <Text style={styles.appName}>StraySync</Text>
           <Text style={styles.appVersion}>Version 1.0.0</Text>
           <Text style={styles.appDescription}>
             Help locate and track stray cats in your area. Take photos, mark
             locations, and get notifications when you're near a stray cat.
           </Text>
           
-          <TouchableOpacity style={styles.aboutButton}>
+          <TouchableOpacity 
+            style={[styles.aboutButton, { backgroundColor: '#2E7D32' }]} 
+            onPress={handleSupportPress}
+          >
             <Ionicons name="heart" size={20} color="white" />
             <Text style={styles.aboutButtonText}>Support Stray Cats</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={styles.aboutButton}>
+          <TouchableOpacity 
+            style={[styles.aboutButton, { backgroundColor: '#388E3C' }]} 
+            onPress={handleContactPress}
+          >
             <Ionicons name="mail" size={20} color="white" />
             <Text style={styles.aboutButtonText}>Contact Us</Text>
           </TouchableOpacity>
@@ -318,7 +417,7 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#4CAF50',
+    color: '#2E7D32',
     marginBottom: 5,
   },
   appVersion: {
@@ -334,7 +433,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   aboutButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#2E7D32',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

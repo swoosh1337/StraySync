@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS public.cats (
   longitude DOUBLE PRECISION NOT NULL,
   image_url TEXT NOT NULL,
   description TEXT,
-  spotted_at TIMESTAMP WITH TIME ZONE NOT NULL
+  spotted_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  animal_type TEXT DEFAULT 'cat'
 );
 
 -- Create storage bucket

@@ -12,7 +12,9 @@
     "fix-rls": "node database/scripts/fix-rls.js",
     "test-upload": "node database/scripts/test-image-upload.js",
     "delete-file": "node database/utils/delete-specific-file.js",
-    "db": "node database/db-cli.js"
+    "db": "node database/db-cli.js",
+    "add-animal-type": "node database/scripts/add-animal-type.js",
+    "rename-table": "node database/scripts/rename-table.js"
   },
   "bin": {
     "db-cli": "./database/db-cli.js"

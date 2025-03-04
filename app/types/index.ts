@@ -29,6 +29,7 @@ export type Cat = {
   is_adoptable?: boolean;
   contact_info?: string;
   last_seen_date?: string;
+  animal_type?: 'cat' | 'dog';
 };
 
 // Notification Types

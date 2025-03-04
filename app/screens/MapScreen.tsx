@@ -6,6 +6,7 @@ import {
   Text,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import MapView, { Marker, Callout } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,18 +22,23 @@ import {
 import { notificationService } from '../services/notifications';
 import { useSettings } from '../contexts/SettingsContext';
 import * as Location from 'expo-location';
+import { LoadingOverlay } from '../components';
+import { useLoading } from '../hooks';
 
 type MapScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   'Main'
 >;
 
+// Filter options for animal types
+type AnimalFilter = 'all' | 'cats' | 'dogs';
+
 const MapScreen: React.FC = () => {
   const navigation = useNavigation<MapScreenNavigationProp>();
   const isFocused = useIsFocused();
   const mapRef = useRef<MapView>(null);
   const [cats, setCats] = useState<Cat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { isLoading, withLoading } = useLoading();
   const [currentLocation, setCurrentLocation] = useState<LocationCoordinates | null>(
     null
   );
@@ -43,27 +49,53 @@ const MapScreen: React.FC = () => {
     isNotificationsEnabled 
   } = useSettings();
   const [lastCleanupTime, setLastCleanupTime] = useState<number>(0);
+  const [animalFilter, setAnimalFilter] = useState<AnimalFilter>('all');
 
-  // Fetch cats from the database
-  const fetchCats = async () => {
+  // Fetch animals from the database based on filter
+  const fetchAnimals = useCallback(async () => {
     try {
-      console.log('Fetching cats from database...');
-      setLoading(true);
-      const fetchedCats = await catService.getCats();
-      console.log(`Fetched ${fetchedCats.length} cats from database`);
-      
-      // Update state with new cats
-      setCats(fetchedCats);
-      setLoading(false);
-      
-      return fetchedCats;
+      console.log(`Fetching animals with filter: ${animalFilter}`);
+      return await withLoading(async () => {
+        let fetchedAnimals: Cat[] = [];
+        
+        try {
+          // First try to get all animals
+          fetchedAnimals = await catService.getCats();
+          console.log(`Fetched ${fetchedAnimals.length} animals from database`);
+          
+          // Apply client-side filtering if needed
+          if (animalFilter === 'cats') {
+            fetchedAnimals = fetchedAnimals.filter(animal => 
+              !animal.animal_type || animal.animal_type === 'cat'
+            );
+            console.log(`Filtered to ${fetchedAnimals.length} cats`);
+          } else if (animalFilter === 'dogs') {
+            fetchedAnimals = fetchedAnimals.filter(animal => 
+              animal.animal_type === 'dog'
+            );
+            console.log(`Filtered to ${fetchedAnimals.length} dogs`);
+          }
+        } catch (error) {
+          console.error('Error fetching animals:', error);
+          fetchedAnimals = [];
+        }
+        
+        // Ensure all animals have an animal_type
+        fetchedAnimals = fetchedAnimals.map(animal => ({
+          ...animal,
+          animal_type: animal.animal_type || 'cat' // Default to 'cat' if not specified
+        }));
+        
+        setCats(fetchedAnimals);
+        
+        return fetchedAnimals;
+      });
     } catch (error) {
-      console.error('Error fetching cats:', error);
-      Alert.alert('Error', 'Failed to load cat sightings');
-      setLoading(false);
+      console.error('Error fetching animals:', error);
+      Alert.alert('Error', 'Failed to load animal sightings');
       return [];
     }
-  };
+  }, [animalFilter, withLoading]);
 
   // Add a new cat directly to the state (for immediate display)
   const addCatToState = (newCat: Cat) => {
@@ -94,54 +126,48 @@ const MapScreen: React.FC = () => {
 
   // Clean up old cat sightings
   const cleanupOldCatSightings = useCallback(async () => {
-    const now = Date.now();
-    // Only run cleanup once per hour
-    if (now - lastCleanupTime < 60 * 60 * 1000) {
-      console.log('Skipping cleanup - last cleanup was less than an hour ago');
+    const now = new Date().getTime();
+    const oneDay = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    
+    // Only run cleanup once per day
+    if (lastCleanupTime && now - lastCleanupTime < oneDay) {
+      console.log('Skipping cleanup, last run less than 24 hours ago');
       return [];
     }
     
     try {
       console.log('Running cleanup of old cat sightings...');
-      setLoading(true); // Show loading indicator during cleanup
-      
-      const deletedCatIds = await catService.cleanupOldCatSightings();
-      setLastCleanupTime(now);
-      
-      if (deletedCatIds.length > 0) {
-        console.log(`Removed ${deletedCatIds.length} old markers from map:`, deletedCatIds);
+      return await withLoading(async () => {
+        const deletedCats = await catService.cleanupOldCatSightings();
+        setLastCleanupTime(now);
         
-        // Immediately update the cats state to remove deleted cats
-        setCats(prevCats => {
-          const deletedIdsSet = new Set(deletedCatIds);
-          const updatedCats = prevCats.filter(cat => !deletedIdsSet.has(cat.id));
-          console.log(`Filtered out ${prevCats.length - updatedCats.length} deleted cats from map`);
-          return updatedCats;
-        });
+        if (deletedCats.length > 0) {
+          console.log(`Deleted ${deletedCats.length} old cat sightings`);
+          
+          // Refresh the cat list after cleanup
+          await fetchAnimals();
+          
+          // Show notification about cleanup
+          Alert.alert(
+            'Cleanup Complete',
+            `Removed ${deletedCats.length} old cat sightings that were more than 30 days old.`
+          );
+        } else {
+          console.log('No cats were deleted during cleanup');
+        }
         
-        // Wait a moment before fetching fresh data to ensure database consistency
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Fetch fresh data from the database
-        await fetchCats();
-      } else {
-        console.log('No cats were deleted during cleanup');
-      }
-      
-      return deletedCatIds;
+        return deletedCats;
+      });
     } catch (error) {
-      console.error('Error during cleanup:', error);
-      // Still try to refresh data even if cleanup failed
-      try {
-        await fetchCats();
-      } catch (fetchError) {
-        console.error('Error fetching cats after cleanup error:', fetchError);
+      console.error('Error cleaning up old cat sightings:', error);
+      if (error instanceof Error) {
+        Alert.alert('Error', `Failed to clean up old cat sightings: ${error.message}`);
+      } else {
+        Alert.alert('Error', 'Failed to clean up old cat sightings');
       }
       return [];
-    } finally {
-      setLoading(false); // Hide loading indicator
     }
-  }, [lastCleanupTime]);
+  }, [lastCleanupTime, withLoading, fetchAnimals]);
 
   // Get the user's current location
   const getCurrentLocation = async () => {
@@ -171,95 +197,71 @@ const MapScreen: React.FC = () => {
     }
   };
 
-  // Initialize the map and fetch data
+  // Initialize map and load data
   useEffect(() => {
     const initializeMap = async () => {
-      setLoading(true);
-      await getCurrentLocation();
-      await fetchCats();
-      setLoading(false);
+      try {
+        await withLoading(async () => {
+          await getCurrentLocation();
+          // We'll fetch animals in the isFocused effect, so no need to do it here
+        });
+      } catch (error) {
+        console.error('Error initializing map:', error);
+        Alert.alert('Error', 'Failed to initialize map. Please try again.');
+      }
     };
 
     initializeMap();
-
-    // Set up location subscription
-    let locationSubscription: Location.LocationSubscription | null = null;
-
-    const subscribeToLocationUpdates = async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        locationSubscription = await Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.Balanced,
-            distanceInterval: 100, // Update every 100 meters
-          },
-          (location) => {
-            const newLocation = {
-              latitude: location.coords.latitude,
-              longitude: location.coords.longitude,
-            };
-            setCurrentLocation(newLocation);
-            
-            // Check for nearby cats when location updates
-            if (isNotificationsEnabled) {
-              notificationService.checkForNearbyCats(
-                newLocation,
-                notificationRadius,
-                notificationTimeFrame
-              );
-            }
-          }
-        );
-      }
-    };
-
-    subscribeToLocationUpdates();
-
-    // Clean up subscription when component unmounts
-    return () => {
-      if (locationSubscription) {
-        locationSubscription.remove();
-      }
-    };
-  }, [notificationRadius, notificationTimeFrame, isNotificationsEnabled]);
+    // Empty dependency array to ensure this only runs once on mount
+  }, []);
 
   // Refresh data when the screen is focused
   useEffect(() => {
     if (isFocused) {
       console.log('Screen focused, refreshing data...');
-      fetchCats();
       
-      // Check for nearby cats for notifications
-      checkForNearbyCats();
+      const refreshData = async () => {
+        try {
+          // Only show loading indicator when returning from another screen
+          await fetchAnimals();
+          
+          // Check for nearby cats for notifications
+          if (currentLocation) {
+            checkForNearbyCats();
+          }
+        } catch (error) {
+          console.error('Error refreshing data:', error);
+        }
+      };
+      
+      // Execute refresh immediately
+      refreshData();
     }
-  }, [isFocused, notificationRadius, notificationTimeFrame, isNotificationsEnabled]);
+  }, [isFocused, fetchAnimals]); // Remove currentLocation from dependencies to reduce fetches
   
-  // Set up cleanup interval
+  // Set up cleanup interval - only run once on component mount
   useEffect(() => {
     console.log('Setting up cleanup interval...');
     
-    // Run cleanup on initial load
-    const initialCleanup = async () => {
-      try {
-        await cleanupOldCatSightings();
-      } catch (error) {
+    // Run cleanup on initial load, but with a delay to avoid overwhelming the app on startup
+    const initialCleanupTimeout = setTimeout(() => {
+      cleanupOldCatSightings().catch(error => {
         console.error('Error during initial cleanup:', error);
-      }
-    };
+      });
+    }, 10000); // 10 second delay
     
-    initialCleanup();
-    
-    // Set up interval to run cleanup every 15 minutes
+    // Set up interval to run cleanup every hour instead of every 15 minutes
     const cleanupInterval = setInterval(() => {
       console.log('Running scheduled cleanup...');
       cleanupOldCatSightings().catch(error => {
         console.error('Error during scheduled cleanup:', error);
       });
-    }, 15 * 60 * 1000); // 15 minutes
+    }, 60 * 60 * 1000); // 1 hour
 
-    // Clean up interval when component unmounts
+    // Clean up interval and timeout when component unmounts
     return () => {
       clearInterval(cleanupInterval);
+      clearTimeout(initialCleanupTimeout);
     };
   }, []);
 
@@ -299,7 +301,7 @@ const MapScreen: React.FC = () => {
               text: 'OK', 
               onPress: () => {
                 // Refresh the map to ensure we have the latest data
-                fetchCats();
+                fetchAnimals();
               }
             }
           ]
@@ -314,41 +316,116 @@ const MapScreen: React.FC = () => {
   // Handle manual refresh
   const handleRefresh = async () => {
     console.log('Manual refresh requested');
-    setLoading(true);
     
     try {
-      // Get current location first
-      await getCurrentLocation();
-      
-      // Force cleanup regardless of time since last cleanup
-      console.log('Forcing cleanup during manual refresh');
-      const deletedCatIds = await catService.cleanupOldCatSightings();
-      setLastCleanupTime(Date.now());
-      
-      if (deletedCatIds.length > 0) {
-        console.log(`Manual refresh removed ${deletedCatIds.length} old markers from map`);
-        
-        // Immediately update the cats state to remove deleted cats
-        setCats(prevCats => {
-          const deletedIdsSet = new Set(deletedCatIds);
-          return prevCats.filter(cat => !deletedIdsSet.has(cat.id));
-        });
-      }
-      
-      // Wait a moment before fetching fresh data
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Then fetch latest data
-      await fetchCats();
-      console.log('Manual refresh completed successfully');
+      await withLoading(Promise.all([
+        getCurrentLocation(),
+        fetchAnimals()
+      ]));
+      console.log('Manual refresh completed');
     } catch (error) {
       console.error('Error during manual refresh:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
-  if (loading) {
+  // Render markers for each cat
+  const renderMarkers = () => {
+    return cats.map((cat) => (
+      <Marker
+        key={cat.id}
+        coordinate={{
+          latitude: cat.latitude,
+          longitude: cat.longitude,
+        }}
+        onPress={() => navigation.navigate('CatDetails', { catId: cat.id })}
+      >
+        <View style={styles.markerContainer}>
+          <View style={[
+            styles.markerIconContainer,
+            cat.animal_type === 'dog' ? styles.dogMarker : styles.catMarker
+          ]}>
+            <Ionicons 
+              name={cat.animal_type === 'dog' ? 'paw' : 'paw-outline'} 
+              size={24} 
+              color={cat.animal_type === 'dog' ? '#8B4513' : '#2E7D32'} 
+            />
+          </View>
+        </View>
+        <Callout tooltip>
+          <View style={styles.calloutContainer}>
+            <Image
+              source={{ uri: cat.image_url }}
+              style={styles.calloutImage}
+              resizeMode="cover"
+            />
+            <View style={styles.calloutTextContainer}>
+              <Text style={styles.calloutTitle}>
+                {cat.animal_type === 'dog' ? 'Stray Dog' : 'Stray Cat'}
+              </Text>
+              <Text style={styles.calloutDescription} numberOfLines={2}>
+                {cat.description || 'No description provided'}
+              </Text>
+              <Text style={styles.calloutDate}>
+                {new Date(cat.spotted_at).toLocaleDateString()}
+              </Text>
+            </View>
+          </View>
+        </Callout>
+      </Marker>
+    ));
+  };
+
+  // Add this to the JSX where appropriate
+  const renderFilterButtons = () => {
+    return (
+      <View style={styles.filterContainer}>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            animalFilter === 'all' && styles.activeFilterButton,
+          ]}
+          onPress={() => setAnimalFilter('all')}
+        >
+          <Text style={[
+            styles.filterButtonText,
+            animalFilter === 'all' && styles.activeFilterButtonText,
+          ]}>All</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            animalFilter === 'cats' && styles.activeFilterButton,
+          ]}
+          onPress={() => setAnimalFilter('cats')}
+        >
+          <Text style={[
+            styles.filterButtonText,
+            animalFilter === 'cats' && styles.activeFilterButtonText,
+          ]}>Cats</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
+            animalFilter === 'dogs' && styles.activeFilterButton,
+          ]}
+          onPress={() => setAnimalFilter('dogs')}
+        >
+          <Text style={[
+            styles.filterButtonText,
+            animalFilter === 'dogs' && styles.activeFilterButtonText,
+          ]}>Dogs</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Add a useEffect to refresh data when the filter changes
+  useEffect(() => {
+    console.log('Animal filter changed to:', animalFilter);
+    fetchAnimals();
+  }, [animalFilter, fetchAnimals]);
+
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#4CAF50" />
@@ -359,6 +436,8 @@ const MapScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
+      <LoadingOverlay visible={isLoading} message="Loading animals..." />
+      
       {region && (
         <MapView
           ref={mapRef}
@@ -366,49 +445,36 @@ const MapScreen: React.FC = () => {
           provider={undefined}
           initialRegion={region}
           showsUserLocation
-          showsMyLocationButton
         >
-          {cats.map((cat) => (
-            <Marker
-              key={cat.id}
-              coordinate={{
-                latitude: cat.latitude,
-                longitude: cat.longitude,
-              }}
-              onPress={() => handleCatPress(cat.id)}
-            >
-              <Ionicons name="paw" size={30} color="#FF5722" />
-              <Callout>
-                <View style={styles.callout}>
-                  <Text style={styles.calloutTitle}>Stray Cat</Text>
-                  <Text style={styles.calloutText}>
-                    Spotted: {new Date(cat.spotted_at).toLocaleDateString()}
-                  </Text>
-                  <Text style={styles.calloutText}>Tap for details</Text>
-                </View>
-              </Callout>
-            </Marker>
-          ))}
+          {renderMarkers()}
         </MapView>
       )}
 
+      {/* Add button - bottom right */}
       <TouchableOpacity style={styles.addButton} onPress={handleAddCat}>
         <Ionicons name="add" size={30} color="white" />
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.locationButton}
-        onPress={getCurrentLocation}
-      >
-        <Ionicons name="locate" size={24} color="#4CAF50" />
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={styles.refreshButton}
-        onPress={handleRefresh}
-      >
-        <Ionicons name="refresh" size={24} color="#4CAF50" />
-      </TouchableOpacity>
+      {/* Map control buttons - top right */}
+      <View style={styles.mapControlsContainer}>
+        {/* Location button */}
+        <TouchableOpacity
+          style={styles.controlButton}
+          onPress={getCurrentLocation}
+        >
+          <Ionicons name="locate" size={24} color="#4CAF50" />
+        </TouchableOpacity>
+        
+        {/* Refresh button */}
+        <TouchableOpacity
+          style={styles.controlButton}
+          onPress={handleRefresh}
+        >
+          <Ionicons name="refresh" size={24} color="#4CAF50" />
+        </TouchableOpacity>
+      </View>
+
+      {renderFilterButtons()}
     </View>
   );
 };
@@ -432,12 +498,12 @@ const styles = StyleSheet.create({
   },
   addButton: {
     position: 'absolute',
-    bottom: 30,
-    right: 30,
+    bottom: 20,
+    right: 20,
     backgroundColor: '#4CAF50',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 5,
@@ -446,10 +512,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
   },
-  locationButton: {
+  mapControlsContainer: {
     position: 'absolute',
-    bottom: 100,
-    right: 30,
+    top: 20,
+    right: 20,
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
+  controlButton: {
     backgroundColor: 'white',
     width: 50,
     height: 50,
@@ -462,33 +533,83 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
   },
-  callout: {
-    width: 150,
-    padding: 10,
+  calloutContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  calloutImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginRight: 10,
+  },
+  calloutTextContainer: {
+    flex: 1,
   },
   calloutTitle: {
     fontWeight: 'bold',
     fontSize: 16,
     marginBottom: 5,
   },
-  calloutText: {
+  calloutDescription: {
     fontSize: 14,
   },
-  refreshButton: {
+  calloutDate: {
+    fontSize: 12,
+    color: '#666',
+  },
+  filterContainer: {
     position: 'absolute',
-    bottom: 150,
-    right: 30,
-    backgroundColor: 'white',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    bottom: 90,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 5,
+    gap: 10,
+  },
+  filterButton: {
+    padding: 10,
+    borderRadius: 20,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    minWidth: 80,
+    alignItems: 'center',
+    elevation: 3,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+  },
+  activeFilterButton: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  filterButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  activeFilterButtonText: {
+    color: 'white',
+  },
+  markerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markerIconContainer: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 5,
+    borderWidth: 2,
+    borderColor: '#ccc',
+  },
+  catMarker: {
+    borderColor: '#2E7D32',
+  },
+  dogMarker: {
+    borderColor: '#8B4513',
   },
 });
 

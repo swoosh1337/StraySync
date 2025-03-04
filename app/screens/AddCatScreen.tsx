@@ -48,6 +48,7 @@ const AddCatScreen: React.FC = () => {
   const [userId, setUserId] = useState<string | null>(null);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [inputY, setInputY] = useState(0);
+  const [animalType, setAnimalType] = useState<'cat' | 'dog'>('cat');
 
   // Get the current user ID and location
   useEffect(() => {
@@ -202,102 +203,154 @@ const AddCatScreen: React.FC = () => {
   // Function to measure the position of the description input
   const measureInputPosition = (event: LayoutChangeEvent) => {
     const { y, height } = event.nativeEvent.layout;
-    setInputY(y + height);
+    // Set a fixed value that's reasonable rather than using the exact position
+    // This prevents excessive scrolling
+    setInputY(y + height / 2);
   };
 
-  // Submit the cat sighting
-  const handleSubmit = async () => {
-    if (!imageUri) {
-      Alert.alert('Missing Photo', 'Please add a photo of the cat');
-      return;
-    }
+  // Add a function to handle keyboard focus
+  const handleDescriptionFocus = () => {
+    // Add a small delay to ensure the scroll happens after the keyboard appears
+    setTimeout(() => {
+      if (scrollViewRef.current && inputY > 0) {
+        // Scroll to a position that keeps the input visible but not at the very bottom
+        scrollViewRef.current.scrollTo({ y: inputY - 150, animated: true });
+      }
+    }, 300);
+  };
 
-    if (!userId) {
-      Alert.alert('Error', 'User ID not available');
+  // Add this to the JSX where appropriate
+  const renderAnimalTypeSelector = () => {
+    return (
+      <View style={styles.animalTypeContainer}>
+        <Text style={styles.sectionTitle}>Animal Type</Text>
+        <View style={styles.animalTypeButtons}>
+          <TouchableOpacity
+            style={[
+              styles.animalTypeButton,
+              animalType === 'cat' && styles.activeAnimalTypeButton,
+            ]}
+            onPress={() => setAnimalType('cat')}
+          >
+            <Ionicons
+              name="paw"
+              size={24}
+              color={animalType === 'cat' ? 'white' : '#333'}
+            />
+            <Text
+              style={[
+                styles.animalTypeText,
+                animalType === 'cat' && styles.activeAnimalTypeText,
+              ]}
+            >
+              Cat
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.animalTypeButton,
+              animalType === 'dog' && styles.activeAnimalTypeButton,
+            ]}
+            onPress={() => setAnimalType('dog')}
+          >
+            <Ionicons
+              name="paw"
+              size={24}
+              color={animalType === 'dog' ? 'white' : '#333'}
+            />
+            <Text
+              style={[
+                styles.animalTypeText,
+                animalType === 'dog' && styles.activeAnimalTypeText,
+              ]}
+            >
+              Dog
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  // Update the handleSubmit function to include the animal_type
+  const handleSubmit = async () => {
+    console.log('Submit button pressed');
+    
+    if (!imageUri) {
+      Alert.alert('Error', 'Please take a photo or select an image');
       return;
     }
 
     setLoading(true);
-    console.log('=== STARTING CAT SUBMISSION PROCESS ===');
-    console.log('Image URI:', imageUri.substring(0, 50) + '...');
-    console.log('User ID:', userId);
-    console.log('Location:', JSON.stringify(location));
+    console.log(`Starting submission process for ${animalType}`);
 
     try {
-      // Try to compress the image if it's too large
-      let finalImageUri = imageUri;
-      let imageUrl = '';
-      let uploadSuccess = false;
+      // Get current user ID
+      const currentUserId = userId || 'anonymous';
+      console.log('Using user ID:', currentUserId);
       
-      // Upload the image to Supabase storage
-      console.log('Uploading image to Supabase...');
+      // Use the catService's uploadImage method instead of direct Supabase calls
+      console.log('Uploading image using catService...');
+      let imageUrl;
       
       try {
-        // First attempt - try the normal upload
-        console.log('Attempting primary upload method...');
-        imageUrl = await catService.uploadImage(finalImageUri, userId);
-        
-        if (imageUrl) {
-          console.log('Image uploaded successfully:', imageUrl);
-          console.log('Is placeholder image:', imageUrl.includes('placekitten.com') ? 'Yes' : 'No');
-          uploadSuccess = true;
-        } else {
-          throw new Error('Failed to upload image');
-        }
+        imageUrl = await catService.uploadImage(imageUri, currentUserId);
+        console.log('Image uploaded successfully, URL:', imageUrl);
       } catch (uploadError) {
-        console.error('Error during image upload:', uploadError);
-        
-        // Try with the fallback method
-        console.log('Using fallback image service...');
-        imageUrl = await catService.uploadToPublicService();
-        console.log('Fallback image URL:', imageUrl);
-        uploadSuccess = true;
+        console.error('Error uploading image:', uploadError);
+        Alert.alert('Error', 'Failed to upload image. Please try again.');
+        setLoading(false);
+        return;
       }
       
-      if (!uploadSuccess) {
-        throw new Error('All image upload methods failed');
+      if (!imageUrl) {
+        console.error('Failed to get URL for uploaded image');
+        Alert.alert('Error', 'Failed to process image. Please try again.');
+        setLoading(false);
+        return;
       }
-
-      // Add the cat sighting to the database
-      console.log('Adding cat to database...');
+      
+      // Prepare the animal data
+      const animalData = {
+        user_id: currentUserId,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        image_url: imageUrl,
+        description: description || `A stray ${animalType} spotted at this location`,
+        spotted_at: new Date().toISOString(),
+        animal_type: animalType,
+      };
+      
+      console.log('Animal data prepared:', JSON.stringify(animalData, null, 2));
+      
+      // Add the animal to the database
+      console.log(`Attempting to add ${animalType} to database`);
+      let newCat = null;
+      
       try {
-        const newCat = await catService.addCat({
-          user_id: userId,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          image_url: imageUrl,
-          description: description.trim() || 'Stray cat spotted',
-          spotted_at: new Date().toISOString(),
-        });
-
-        if (newCat) {
-          console.log('Cat added successfully:', newCat.id);
-          
-          // Navigate back immediately to refresh the map
-          navigation.goBack();
-          
-          // Show different messages based on whether we used a fallback image
-          if (imageUrl.includes('placekitten.com')) {
-            Alert.alert(
-              'Partial Success',
-              'Cat sighting was added but we had to use a placeholder image. The original image could not be uploaded.'
-            );
-          } else {
-            Alert.alert(
-              'Success',
-              'Cat sighting added successfully!'
-            );
-          }
-        } else {
-          throw new Error('Failed to add cat sighting');
-        }
+        newCat = await catService.addCat(animalData);
+        console.log('Database response:', newCat ? 'Success' : 'Failed');
       } catch (dbError) {
-        console.error('Database error:', dbError);
-        throw new Error('Failed to save cat sighting to database');
+        console.error('Error adding animal to database:', dbError);
+        Alert.alert('Error', 'Failed to save animal data. Please try again.');
+        setLoading(false);
+        return;
       }
-    } catch (error: any) {
-      console.error('Error adding cat:', error);
-      Alert.alert('Error', `Failed to add cat sighting: ${error.message || 'Unknown error'}`);
+      
+      if (newCat) {
+        console.log('Successfully added animal:', newCat.id);
+        Alert.alert(
+          'Success', 
+          `${animalType === 'cat' ? 'Cat' : 'Dog'} sighting added successfully!`,
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } else {
+        console.error('Failed to add animal to database (null response)');
+        Alert.alert('Error', 'Failed to save animal data. Please try again.');
+      }
+    } catch (error) {
+      console.error('Unhandled error in handleSubmit:', error);
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -321,6 +374,17 @@ const AddCatScreen: React.FC = () => {
           contentContainerStyle={{ paddingBottom: 100 }}
           keyboardShouldPersistTaps="handled"
         >
+          <View style={styles.header}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Ionicons name="arrow-back" size={24} color="#333" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Add {animalType === 'cat' ? 'Cat' : 'Dog'}</Text>
+            <View style={styles.placeholder} />
+          </View>
+
           <View style={styles.mapContainer}>
             <MapView
               style={styles.map}
@@ -341,7 +405,7 @@ const AddCatScreen: React.FC = () => {
               </Marker>
             </MapView>
             <Text style={styles.mapInstructions}>
-              Drag the marker to the exact location where you spotted the cat
+              Drag the marker to the exact location where you spotted the {animalType}
             </Text>
           </View>
 
@@ -391,22 +455,11 @@ const AddCatScreen: React.FC = () => {
               multiline
               numberOfLines={4}
               textAlignVertical="top"
-              onFocus={() => {
-                // Scroll to the measured position with a slight delay
-                setTimeout(() => {
-                  if (scrollViewRef.current && inputY > 0) {
-                    // Use a smaller offset to reduce scrolling amount
-                    // Different offset for iOS and Android
-                    const offset = Platform.OS === 'ios' ? 80 : 50;
-                    scrollViewRef.current.scrollTo({ 
-                      y: inputY - offset, // Reduced offset for less aggressive scrolling
-                      animated: true 
-                    });
-                  }
-                }, 300);
-              }}
+              onFocus={handleDescriptionFocus}
             />
           </View>
+
+          {renderAnimalTypeSelector()}
 
           <TouchableOpacity
             style={[
@@ -421,7 +474,7 @@ const AddCatScreen: React.FC = () => {
             ) : (
               <>
                 <Ionicons name="paw" size={24} color="white" />
-                <Text style={styles.submitButtonText}>Add Cat Sighting</Text>
+                <Text style={styles.submitButtonText}>Add {animalType === 'cat' ? 'Cat' : 'Dog'} Sighting</Text>
               </>
             )}
           </TouchableOpacity>
@@ -435,6 +488,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+  },
+  backButton: {
+    padding: 5,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  placeholder: {
+    width: 24,
   },
   mapContainer: {
     margin: 15,
@@ -552,6 +622,48 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginLeft: 10,
+  },
+  animalTypeContainer: {
+    margin: 15,
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 15,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    marginBottom: 20,
+  },
+  animalTypeButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingHorizontal: 10,
+  },
+  animalTypeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    width: '48%',
+    height: 50,
+  },
+  activeAnimalTypeButton: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  animalTypeText: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  activeAnimalTypeText: {
+    color: 'white',
   },
 });
 

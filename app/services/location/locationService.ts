@@ -1,11 +1,23 @@
 import * as Location from 'expo-location';
 import { LocationCoordinates, Region } from '../../types';
+import { Linking, Platform } from 'react-native';
+
+// Track permission request to avoid multiple requests
+let permissionRequested = false;
 
 export const locationService = {
   // Request location permissions
   async requestPermissions(): Promise<boolean> {
     try {
+      // If we've already requested permissions, don't ask again in the same session
+      if (permissionRequested) {
+        console.log('Location permissions already requested this session');
+        const { status } = await Location.getForegroundPermissionsAsync();
+        return status === 'granted';
+      }
+      
       console.log('Requesting location permissions...');
+      permissionRequested = true;
       
       const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
       
@@ -22,8 +34,8 @@ export const locationService = {
     }
   },
   
-  // Get current location
-  async getCurrentLocation(): Promise<LocationCoordinates | null> {
+  // Get current location with timeout
+  async getCurrentLocation(timeout = 10000): Promise<LocationCoordinates | null> {
     try {
       console.log('Getting current location...');
       
@@ -39,9 +51,18 @@ export const locationService = {
         }
       }
       
-      const location = await Location.getCurrentPositionAsync({
+      // Create a promise that rejects after the timeout
+      const timeoutPromise = new Promise<null>((_, reject) => {
+        setTimeout(() => reject(new Error('Location request timed out')), timeout);
+      });
+      
+      // Create the location request promise
+      const locationPromise = Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
+      
+      // Race the location request against the timeout
+      const location = await Promise.race([locationPromise, timeoutPromise]) as Location.LocationObject;
       
       console.log(`Current location: ${location.coords.latitude}, ${location.coords.longitude}`);
       
@@ -51,6 +72,24 @@ export const locationService = {
       };
     } catch (error: any) {
       console.error('Error getting current location:', error.message || error);
+      
+      // Try to get last known location as fallback
+      try {
+        console.log('Trying to get last known location as fallback...');
+        const lastLocation = await Location.getLastKnownPositionAsync();
+        
+        if (lastLocation) {
+          console.log(`Using last known location: ${lastLocation.coords.latitude}, ${lastLocation.coords.longitude}`);
+          return {
+            latitude: lastLocation.coords.latitude,
+            longitude: lastLocation.coords.longitude,
+          };
+        }
+      } catch (fallbackError) {
+        console.error('Error getting last known location:', fallbackError);
+      }
+      
+      // If all else fails, return null
       return null;
     }
   },
@@ -117,5 +156,48 @@ export const locationService = {
       latitudeDelta,
       longitudeDelta,
     };
+  },
+  
+  // Open maps app with directions to a location
+  async openMapsWithDirections(
+    destinationLat: number,
+    destinationLng: number,
+    destinationName: string = 'Cat Location'
+  ): Promise<boolean> {
+    try {
+      const currentLocation = await this.getCurrentLocation();
+      
+      // Encode the destination name for URLs
+      const encodedDestName = encodeURIComponent(destinationName);
+      
+      // Try to open Google Maps first (if installed)
+      const googleMapsUrl = Platform.select({
+        ios: `comgooglemaps://?saddr=${currentLocation?.latitude},${currentLocation?.longitude}&daddr=${destinationLat},${destinationLng}&directionsmode=walking&q=${encodedDestName}`,
+        android: `google.navigation:q=${destinationLat},${destinationLng}&mode=w`,
+        default: `https://www.google.com/maps/dir/?api=1&origin=${currentLocation?.latitude},${currentLocation?.longitude}&destination=${destinationLat},${destinationLng}&travelmode=walking&q=${encodedDestName}`,
+      });
+      
+      // Check if Google Maps is installed
+      const canOpenGoogleMaps = await Linking.canOpenURL(googleMapsUrl);
+      
+      if (canOpenGoogleMaps) {
+        console.log('Opening Google Maps...');
+        await Linking.openURL(googleMapsUrl);
+        return true;
+      }
+      
+      // Fallback to Apple Maps on iOS or web URL on other platforms
+      const appleMapsUrl = `http://maps.apple.com/?saddr=${currentLocation?.latitude},${currentLocation?.longitude}&daddr=${destinationLat},${destinationLng}&dirflg=w&q=${encodedDestName}`;
+      const defaultMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${currentLocation?.latitude},${currentLocation?.longitude}&destination=${destinationLat},${destinationLng}&travelmode=walking&q=${encodedDestName}`;
+      
+      const mapsUrl = Platform.OS === 'ios' ? appleMapsUrl : defaultMapsUrl;
+      
+      console.log(`Opening ${Platform.OS === 'ios' ? 'Apple Maps' : 'default maps app'}...`);
+      await Linking.openURL(mapsUrl);
+      return true;
+    } catch (error) {
+      console.error('Error opening maps:', error);
+      return false;
+    }
   },
 }; 

@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Stray Cat Finder",
+    "name": "StraySync",
     "slug": "stray-cat-finder",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/stary-icon-removebg-preview.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/stary-icon-removebg-preview.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#D0F0C0"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -23,8 +23,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/stary-icon-removebg-preview.png",
+        "backgroundColor": "#D0F0C0"
       },
       "package": "com.igrigolia.stray",
       "permissions": [
@@ -45,8 +45,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/notification-icon.png",
-          "color": "#ffffff"
+          "icon": "./assets/stary-icon-removebg-preview.png",
+          "color": "#D0F0C0"
         }
       ]
     ],

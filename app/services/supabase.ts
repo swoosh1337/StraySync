@@ -37,6 +37,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 export const checkSupabaseConnection = async () => {
   try {
     console.log('Checking Supabase connection...');
+    // Try to check the animals table first
+    const { data: animalsData, error: animalsError } = await supabase.from('animals').select('count').limit(1);
+    
+    if (!animalsError) {
+      console.log('Supabase connection successful (animals table)');
+      return true;
+    }
+    
+    // If animals table doesn't exist, try the cats table
     const { data, error } = await supabase.from('cats').select('count').limit(1);
     
     if (error) {
@@ -49,7 +58,7 @@ export const checkSupabaseConnection = async () => {
       return false;
     }
     
-    console.log('Supabase connection successful');
+    console.log('Supabase connection successful (cats table)');
     return true;
   } catch (error: any) {
     console.error('Error checking Supabase connection:', error.message || error);
@@ -189,44 +198,145 @@ export type Cat = {
   image_url: string;
   description?: string;
   spotted_at: string;
+  animal_type?: 'cat' | 'dog';
 };
 
 // Functions to interact with the database
 export const catService = {
-  // Add a new cat sighting
+  // Add a new animal sighting
   async addCat(cat: Omit<Cat, 'id' | 'created_at'>): Promise<Cat | null> {
     try {
-      const { data, error } = await supabase
-        .from('cats')
-        .insert(cat)
-        .select()
-        .single();
+      console.log('=== ADDING ANIMAL ===');
+      console.log('Animal data:', JSON.stringify(cat, null, 2));
       
-      if (error) {
-        // Check if this is a security policy error
-        if (error.message.includes('security policy')) {
-          console.log('Security policy prevented adding cat - this might be expected if RLS is enabled');
-          // Return a mock cat object with the data we tried to insert
-          return {
-            id: `mock-${Date.now()}`,
-            created_at: new Date().toISOString(),
-            ...cat
-          };
+      // Ensure animal_type is set
+      const catWithType = {
+        ...cat,
+        animal_type: cat.animal_type || 'cat'
+      };
+      
+      // Try to use the animals table first
+      console.log('Attempting to add to animals table...');
+      try {
+        const { data, error } = await supabase
+          .from('animals')
+          .insert(catWithType)
+          .select()
+          .single();
+        
+        if (!error) {
+          console.log('Successfully added to animals table:', data.id);
+          return data;
         }
-        console.error('Error adding cat:', error);
-        return null;
+        
+        console.log('Error adding to animals table:', error.message);
+        
+        // If we get a column does not exist error for animal_type
+        if (error.message.includes('column "animal_type" does not exist')) {
+          console.log('animal_type column does not exist in animals table, trying without it');
+          const { animal_type, ...catWithoutType } = catWithType;
+          
+          const { data: dataWithoutType, error: errorWithoutType } = await supabase
+            .from('animals')
+            .insert(catWithoutType)
+            .select()
+            .single();
+          
+          if (!errorWithoutType) {
+            console.log('Successfully added to animals table without animal_type:', dataWithoutType.id);
+            return {
+              ...dataWithoutType,
+              animal_type: catWithType.animal_type
+            };
+          }
+          
+          console.log('Error adding to animals table without animal_type:', errorWithoutType.message);
+        }
+      } catch (error) {
+        console.log('Exception when adding to animals table:', error);
       }
       
-      return data;
+      // Fall back to the cats table if animals doesn't exist or had an error
+      console.log('Falling back to cats table...');
+      try {
+        // Try with animal_type first
+        const { data, error } = await supabase
+          .from('cats')
+          .insert(catWithType)
+          .select()
+          .single();
+        
+        if (!error) {
+          console.log('Successfully added to cats table:', data.id);
+          return data;
+        }
+        
+        console.log('Error adding to cats table with animal_type:', error.message);
+        
+        // If we get a column does not exist error, try without animal_type
+        if (error.message.includes('column "animal_type" does not exist')) {
+          console.log('animal_type column does not exist in cats table, trying without it');
+          const { animal_type, ...catWithoutType } = catWithType;
+          
+          const { data: dataWithoutType, error: errorWithoutType } = await supabase
+            .from('cats')
+            .insert(catWithoutType)
+            .select()
+            .single();
+          
+          if (!errorWithoutType) {
+            console.log('Successfully added to cats table without animal_type:', dataWithoutType.id);
+            return {
+              ...dataWithoutType,
+              animal_type: catWithType.animal_type
+            };
+          }
+          
+          console.log('Error adding to cats table without animal_type:', errorWithoutType.message);
+        }
+        
+        // Handle security policy errors
+        if (error.message.includes('security policy')) {
+          console.log('Security policy prevented adding animal - creating mock object');
+          // Return a mock cat object with the data we tried to insert
+          const mockId = `mock-${Date.now()}`;
+          console.log('Created mock animal with ID:', mockId);
+          return {
+            id: mockId,
+            created_at: new Date().toISOString(),
+            ...catWithType
+          };
+        }
+      } catch (error: any) {
+        console.error('Error in addCat with cats table:', error.message || error);
+      }
+      
+      // If we get here, both attempts failed
+      console.error('Failed to add animal to either table');
+      return null;
     } catch (error: any) {
-      console.error('Error in addCat:', error.message || error);
+      console.error('Unhandled error in addCat:', error.message || error);
       return null;
     }
   },
   
-  // Get all cat sightings
+  // Get all animal sightings (cats and dogs)
   async getCats(): Promise<Cat[]> {
     try {
+      // Try to use the animals table first
+      const { data: animalsData, error: animalsError } = await supabase
+        .from('animals')
+        .select('*')
+        .order('spotted_at', { ascending: false });
+      
+      if (!animalsError) {
+        console.log(`Found ${animalsData?.length || 0} animals in animals table`);
+        return animalsData || [];
+      }
+      
+      console.log('Error fetching from animals table, trying cats table:', animalsError.message);
+      
+      // Fall back to the cats table
       const { data, error } = await supabase
         .from('cats')
         .select('*')
@@ -242,9 +352,116 @@ export const catService = {
         return [];
       }
       
+      console.log(`Found ${data?.length || 0} animals in cats table`);
       return data || [];
     } catch (error: any) {
       console.error('Error in getCats:', error.message || error);
+      return [];
+    }
+  },
+  
+  // Get only cat sightings
+  async getCatsOnly(): Promise<Cat[]> {
+    try {
+      // Try to use the animals table first with filter
+      const { data: animalsData, error: animalsError } = await supabase
+        .from('animals')
+        .select('*')
+        .eq('animal_type', 'cat')
+        .order('spotted_at', { ascending: false });
+      
+      if (!animalsError) {
+        console.log(`Found ${animalsData?.length || 0} cats in animals table`);
+        return animalsData || [];
+      }
+      
+      console.log('Error fetching cats from animals table, trying alternative:', animalsError.message);
+      
+      // First try to filter on the server using cats table
+      const { data, error } = await supabase
+        .from('cats')
+        .select('*')
+        .eq('animal_type', 'cat')
+        .order('spotted_at', { ascending: false });
+      
+      if (error) {
+        console.log('Server-side filtering failed, falling back to client-side filtering');
+        // If the column doesn't exist, fall back to getting all cats and filtering client-side
+        const { data: allData, error: allError } = await supabase
+          .from('cats')
+          .select('*')
+          .order('spotted_at', { ascending: false });
+        
+        if (allError) {
+          console.error('Error fetching all animals:', allError);
+          return [];
+        }
+        
+        // Filter client-side for cats (either explicitly marked as cats or not marked at all)
+        const filteredCats = (allData || []).filter(animal => 
+          !animal.animal_type || animal.animal_type === 'cat'
+        );
+        console.log(`Found ${filteredCats.length} cats using client-side filtering`);
+        return filteredCats;
+      }
+      
+      console.log(`Found ${data?.length || 0} cats in cats table with server-side filtering`);
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getCatsOnly:', error.message || error);
+      return [];
+    }
+  },
+  
+  // Get only dog sightings
+  async getDogsOnly(): Promise<Cat[]> {
+    try {
+      // Try to use the animals table first with filter
+      const { data: animalsData, error: animalsError } = await supabase
+        .from('animals')
+        .select('*')
+        .eq('animal_type', 'dog')
+        .order('spotted_at', { ascending: false });
+      
+      if (!animalsError) {
+        console.log(`Found ${animalsData?.length || 0} dogs in animals table`);
+        return animalsData || [];
+      }
+      
+      console.log('Error fetching dogs from animals table, trying alternative:', animalsError.message);
+      
+      // First try to filter on the server using cats table
+      const { data, error } = await supabase
+        .from('cats')
+        .select('*')
+        .eq('animal_type', 'dog')
+        .order('spotted_at', { ascending: false });
+      
+      if (error) {
+        console.log('Server-side filtering failed, falling back to client-side filtering');
+        // If the column doesn't exist, fall back to getting all cats and filtering client-side
+        const { data: allData, error: allError } = await supabase
+          .from('cats')
+          .select('*')
+          .order('spotted_at', { ascending: false });
+        
+        if (allError) {
+          console.error('Error fetching all animals:', allError);
+          return [];
+        }
+        
+        // Filter client-side for dogs
+        const filteredDogs = (allData || []).filter(animal => 
+          animal.animal_type === 'dog'
+        );
+        console.log(`Found ${filteredDogs.length} dogs using client-side filtering`);
+        return filteredDogs;
+      }
+      
+      console.log(`Found ${data?.length || 0} dogs in cats table with server-side filtering`);
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getDogsOnly:', error.message || error);
       return [];
     }
   },
@@ -772,46 +989,34 @@ export const catService = {
     }
   },
   
-  // Delete a cat sighting
-  async deleteCat(catId: string, userId: string): Promise<boolean> {
+  // Delete a cat
+  async deleteCat(id: string): Promise<boolean> {
     try {
-      // First check if the user owns this cat
-      const isOwner = await this.isUserOwner(catId, userId);
+      // Try to delete from animals table first
+      const { error: animalError } = await supabase
+        .from('animals')
+        .delete()
+        .eq('id', id);
       
-      if (!isOwner) {
-        console.log('User does not own this cat sighting');
-        return false;
+      if (!animalError) {
+        console.log(`Successfully deleted animal ${id} from animals table`);
+        return true;
       }
       
-      // Get the cat details to retrieve the image URL
-      const { data: cat, error: fetchError } = await supabase
-        .from('cats')
-        .select('image_url')
-        .eq('id', catId)
-        .single();
+      console.log(`Failed to delete from animals table, trying cats table: ${animalError.message}`);
       
-      if (fetchError) {
-        console.error('Error fetching cat details for deletion:', fetchError);
-        return false;
-      }
-      
-      // Delete the cat from the database
+      // Fall back to cats table
       const { error } = await supabase
         .from('cats')
         .delete()
-        .eq('id', catId)
-        .eq('user_id', userId); // Extra safety check
+        .eq('id', id);
       
       if (error) {
         console.error('Error deleting cat:', error);
         return false;
       }
       
-      // If cat was deleted successfully, also delete the image
-      if (cat && cat.image_url) {
-        await this.deleteImageFromStorage(cat.image_url);
-      }
-      
+      console.log(`Successfully deleted animal ${id} from cats table`);
       return true;
     } catch (error: any) {
       console.error('Error in deleteCat:', error.message || error);
@@ -1118,6 +1323,78 @@ export const catService = {
     } catch (error: any) {
       console.error('Error in cleanupOldCatSightings:', error.message || error);
       return [];
+    }
+  },
+  
+  // Get a cat by ID
+  async getCatById(id: string): Promise<Cat | null> {
+    try {
+      // Try to get from animals table first
+      const { data: animalData, error: animalError } = await supabase
+        .from('animals')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (!animalError && animalData) {
+        console.log(`Found animal with ID ${id} in animals table`);
+        return animalData;
+      }
+      
+      console.log(`Animal not found in animals table, trying cats table: ${animalError?.message}`);
+      
+      // Fall back to cats table
+      const { data, error } = await supabase
+        .from('cats')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (error) {
+        console.error(`Error fetching cat with ID ${id}:`, error);
+        return null;
+      }
+      
+      console.log(`Found animal with ID ${id} in cats table`);
+      return data;
+    } catch (error: any) {
+      console.error(`Error in getCatById for ID ${id}:`, error.message || error);
+      return null;
+    }
+  },
+  
+  // Update a cat's description
+  async updateCatDescription(id: string, description: string): Promise<boolean> {
+    try {
+      // Try to update in animals table first
+      const { error: animalError } = await supabase
+        .from('animals')
+        .update({ description })
+        .eq('id', id);
+      
+      if (!animalError) {
+        console.log(`Successfully updated description for animal ${id} in animals table`);
+        return true;
+      }
+      
+      console.log(`Failed to update in animals table, trying cats table: ${animalError.message}`);
+      
+      // Fall back to cats table
+      const { error } = await supabase
+        .from('cats')
+        .update({ description })
+        .eq('id', id);
+      
+      if (error) {
+        console.error('Error updating cat description:', error);
+        return false;
+      }
+      
+      console.log(`Successfully updated description for animal ${id} in cats table`);
+      return true;
+    } catch (error: any) {
+      console.error('Error in updateCatDescription:', error.message || error);
+      return false;
     }
   },
 }; 

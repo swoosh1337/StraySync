@@ -15,10 +15,10 @@ import {
 } from 'react-native';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation';
+import { RootStackParamList, Cat } from '../types';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
-import { Cat, catService } from '../services/supabase';
+import { catService } from '../services/supabase';
 import { locationService } from '../services/location';
 import { supabase } from '../services/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,7 +34,7 @@ const CatDetailsScreen: React.FC = () => {
   const navigation = useNavigation<CatDetailsScreenNavigationProp>();
   const { catId } = route.params;
   
-  const [cat, setCat] = useState<Cat | null>(null);
+  const [animal, setAnimal] = useState<Cat | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentLocation, setCurrentLocation] = useState<{
     latitude: number;
@@ -46,134 +46,152 @@ const CatDetailsScreen: React.FC = () => {
   const [editDescription, setEditDescription] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Fetch cat details and check ownership
+  // Fetch animal details and check ownership
   useEffect(() => {
-    const fetchCatDetails = async () => {
+    const fetchAnimalDetails = async () => {
       try {
         setLoading(true);
         
-        // Get current user or retrieve anonymous ID
-        const { data } = await supabase.auth.getSession();
-        let currentUserId = data.session?.user.id;
-        
-        if (!currentUserId) {
-          // For anonymous users, get stored ID or create new one
-          try {
-            const storedId = await AsyncStorage.getItem('anonymousUserId');
-            if (storedId) {
-              currentUserId = storedId;
-              console.log('Retrieved anonymous ID from storage:', storedId);
-            } else {
-              currentUserId = `anonymous-${Math.random().toString(36).substring(2, 9)}`;
-              await AsyncStorage.setItem('anonymousUserId', currentUserId);
-              console.log('Created and stored new anonymous ID:', currentUserId);
-            }
-          } catch (error) {
-            console.error('Error with anonymous ID:', error);
-            currentUserId = `anonymous-${Math.random().toString(36).substring(2, 9)}`;
-          }
-        }
-        
+        // Get current user ID
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUserId = session?.user?.id || await AsyncStorage.getItem('anonymousId');
         setUserId(currentUserId);
         
-        // Get all cats and find the one with matching ID
-        console.log(`Fetching details for cat ID: ${catId}`);
-        const cats = await catService.getCats();
-        console.log(`Retrieved ${cats.length} cats from database`);
+        // Fetch animal details
+        const fetchedAnimal = await catService.getCatById(catId);
         
-        const foundCat = cats.find((c) => c.id === catId);
-        
-        if (foundCat) {
-          console.log(`Found cat with ID ${catId}:`, JSON.stringify({
-            id: foundCat.id,
-            user_id: foundCat.user_id,
-            latitude: foundCat.latitude,
-            longitude: foundCat.longitude,
-            spotted_at: foundCat.spotted_at,
-            has_image: !!foundCat.image_url,
-            description_length: foundCat.description?.length || 0
-          }));
+        if (fetchedAnimal) {
+          setAnimal(fetchedAnimal);
+          setEditDescription(fetchedAnimal.description || '');
           
-          setCat(foundCat);
-          setEditDescription(foundCat.description || '');
-          
-          // Check if current user is the owner - works for both auth and anonymous
-          console.log('Checking ownership - Cat user_id:', foundCat.user_id, 'Current user:', currentUserId);
-          if (currentUserId && foundCat.user_id === currentUserId) {
-            console.log('User is the owner of this cat');
-            setIsOwner(true);
-          } else {
-            console.log('User is NOT the owner of this cat');
-          }
+          // Check if current user is the owner
+          setIsOwner(fetchedAnimal.user_id === currentUserId);
         } else {
-          console.error(`Cat with ID ${catId} not found in database`);
-          Alert.alert(
-            'Cat Not Found', 
-            'This cat sighting may have been deleted or is no longer available.',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
-          );
-          return;
-        }
-        
-        // Get current location for distance calculation
-        try {
-          const location = await locationService.getCurrentLocation();
-          if (location) {
-            setCurrentLocation(location);
-          }
-        } catch (locationError) {
-          console.error('Error getting current location:', locationError);
-          // Don't fail the whole operation if we can't get location
+          Alert.alert('Error', 'Animal not found');
+          navigation.goBack();
         }
       } catch (error) {
-        console.error('Error fetching cat details:', error);
-        Alert.alert(
-          'Error', 
-          'Failed to load cat details. Please try again.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
-        );
+        console.error('Error fetching animal details:', error);
+        Alert.alert('Error', 'Failed to load animal details');
       } finally {
         setLoading(false);
       }
     };
-
-    fetchCatDetails();
-  }, [catId]);
-
-  // Handle editing cat description
-  const handleEditCat = async () => {
-    if (!cat || !userId) return;
+    
+    fetchAnimalDetails();
+  }, [catId, navigation]);
+  
+  // Get current location for distance calculation
+  useEffect(() => {
+    const getCurrentLocation = async () => {
+      try {
+        const location = await locationService.getCurrentLocation();
+        if (location) {
+          setCurrentLocation(location);
+        }
+      } catch (error) {
+        console.error('Error getting current location:', error);
+      }
+    };
+    
+    getCurrentLocation();
+  }, []);
+  
+  // Calculate distance between current location and animal
+  const getDistance = () => {
+    if (!currentLocation || !animal) return 'Unknown distance';
+    
+    const distance = locationService.calculateDistance(
+      currentLocation.latitude,
+      currentLocation.longitude,
+      animal.latitude,
+      animal.longitude
+    );
+    
+    if (distance < 1) {
+      return `${Math.round(distance * 1000)} meters away`;
+    } else {
+      return `${distance.toFixed(1)} km away`;
+    }
+  };
+  
+  // Open directions in maps app
+  const openDirections = async () => {
+    if (!animal) return;
     
     try {
-      const success = await catService.updateCat(cat.id, userId, {
-        description: editDescription
+      // Get current location
+      const currentLocation = await locationService.getCurrentLocation();
+      
+      if (!currentLocation) {
+        Alert.alert('Error', 'Could not determine your current location');
+        return;
+      }
+      
+      // Encode destination name for URL
+      const destinationName = animal.animal_type === 'dog' ? 'Stray Dog Location' : 'Stray Cat Location';
+      const encodedDestName = encodeURIComponent(destinationName);
+      
+      // Construct URL for Google Maps
+      const googleMapsUrl = Platform.select({
+        ios: `comgooglemaps://?saddr=${currentLocation.latitude},${currentLocation.longitude}&daddr=${animal.latitude},${animal.longitude}&directionsmode=walking&q=${encodedDestName}`,
+        android: `google.navigation:q=${animal.latitude},${animal.longitude}&mode=w`,
+        default: `https://www.google.com/maps/dir/?api=1&origin=${currentLocation.latitude},${currentLocation.longitude}&destination=${animal.latitude},${animal.longitude}&travelmode=walking&q=${encodedDestName}`,
       });
       
-      if (success) {
-        // Update local state
-        setCat({
-          ...cat,
-          description: editDescription
-        });
-        
-        Alert.alert('Success', 'Cat details updated successfully');
-        setIsEditModalVisible(false);
-      } else {
-        Alert.alert('Error', 'Failed to update cat details');
+      // Check if Google Maps is installed
+      const canOpenGoogleMaps = await Linking.canOpenURL(googleMapsUrl);
+      
+      if (canOpenGoogleMaps) {
+        // Open Google Maps
+        await Linking.openURL(googleMapsUrl);
+        return;
       }
+      
+      // Fallback to Apple Maps on iOS or web URL on other platforms
+      const appleMapsUrl = `http://maps.apple.com/?saddr=${currentLocation.latitude},${currentLocation.longitude}&daddr=${animal.latitude},${animal.longitude}&dirflg=w&q=${encodedDestName}`;
+      const defaultMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${currentLocation.latitude},${currentLocation.longitude}&destination=${animal.latitude},${animal.longitude}&travelmode=walking&q=${encodedDestName}`;
+      
+      const mapsUrl = Platform.OS === 'ios' ? appleMapsUrl : defaultMapsUrl;
+      
+      await Linking.openURL(mapsUrl);
     } catch (error) {
-      console.error('Error updating cat:', error);
-      Alert.alert('Error', 'Failed to update cat details');
+      console.error('Error opening directions:', error);
+      Alert.alert('Error', 'Could not open maps application');
     }
   };
 
-  // Handle deleting cat
-  const handleDeleteCat = async () => {
-    if (!cat || !userId) return;
+  // Handle edit description
+  const handleEditDescription = async () => {
+    if (!animal) return;
+    
+    try {
+      setIsEditModalVisible(false);
+      
+      const success = await catService.updateCatDescription(animal.id, editDescription);
+      
+      if (success) {
+        setAnimal({
+          ...animal,
+          description: editDescription
+        });
+        Alert.alert('Success', 'Description updated successfully');
+      } else {
+        Alert.alert('Error', 'Failed to update description');
+      }
+    } catch (error) {
+      console.error('Error updating description:', error);
+      Alert.alert('Error', 'Failed to update description');
+    }
+  };
+  
+  // Handle delete animal
+  const handleDelete = async () => {
+    if (!animal) return;
     
     Alert.alert(
-      'Confirm Deletion',
-      'Are you sure you want to delete this cat sighting? This action cannot be undone.',
+      'Confirm Delete',
+      `Are you sure you want to delete this ${animal.animal_type || 'animal'} sighting?`,
       [
         {
           text: 'Cancel',
@@ -185,18 +203,19 @@ const CatDetailsScreen: React.FC = () => {
           onPress: async () => {
             try {
               setIsDeleting(true);
-              const success = await catService.deleteCat(cat.id, userId);
+              
+              const success = await catService.deleteCat(animal.id);
               
               if (success) {
-                Alert.alert('Success', 'Cat sighting deleted successfully');
+                Alert.alert('Success', 'Animal sighting deleted successfully');
                 navigation.goBack();
               } else {
-                Alert.alert('Error', 'Failed to delete cat sighting');
+                Alert.alert('Error', 'Failed to delete animal sighting');
                 setIsDeleting(false);
               }
             } catch (error) {
-              console.error('Error deleting cat:', error);
-              Alert.alert('Error', 'Failed to delete cat sighting');
+              console.error('Error deleting animal:', error);
+              Alert.alert('Error', 'Failed to delete animal sighting');
               setIsDeleting(false);
             }
           }
@@ -204,60 +223,20 @@ const CatDetailsScreen: React.FC = () => {
       ]
     );
   };
-
-  // Calculate distance between current location and cat location
-  const getDistance = (): string => {
-    if (!currentLocation || !cat) return 'Unknown';
-    
-    const distance = locationService.calculateDistance(
-      currentLocation.latitude,
-      currentLocation.longitude,
-      cat.latitude,
-      cat.longitude
-    );
-    
-    return distance < 1
-      ? `${Math.round(distance * 1000)} meters`
-      : `${distance.toFixed(1)} km`;
-  };
-
-  // Open directions in maps app
-  const openDirections = () => {
-    if (!cat) return;
-    
-    const scheme = Platform.select({
-      ios: 'maps:',
-      android: 'geo:',
-    });
-    
-    const latLng = `${cat.latitude},${cat.longitude}`;
-    const label = 'Stray Cat Location';
-    const url = Platform.select({
-      ios: `${scheme}?q=${label}&ll=${latLng}`,
-      android: `${scheme}0,0?q=${latLng}(${label})`,
-    });
-    
-    if (url) {
-      Linking.openURL(url).catch((err) =>
-        Alert.alert('Error', 'Could not open maps application')
-      );
-    }
-  };
-
+  
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={styles.loadingText}>Loading cat details...</Text>
+        <Text style={styles.loadingText}>Loading animal details...</Text>
       </View>
     );
   }
-
-  if (!cat) {
+  
+  if (!animal) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={50} color="#FF5722" />
-        <Text style={styles.errorText}>Cat not found</Text>
+        <Text style={styles.errorText}>Animal not found</Text>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
@@ -267,71 +246,64 @@ const CatDetailsScreen: React.FC = () => {
       </View>
     );
   }
-
+  
   return (
     <ScrollView style={styles.container}>
       <Image
-        source={{ uri: cat.image_url }}
+        source={{ uri: animal.image_url }}
         style={styles.image}
         resizeMode="cover"
       />
-
-      {isOwner && (
-        <View style={styles.ownerActionsContainer}>
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => setIsEditModalVisible(true)}
-          >
-            <Ionicons name="create-outline" size={20} color="white" />
-            <Text style={styles.actionButtonText}>Edit</Text>
-          </TouchableOpacity>
+      
+      <View style={styles.infoContainer}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.title}>
+            {animal.animal_type === 'dog' ? 'Stray Dog' : 'Stray Cat'}
+          </Text>
+          <Text style={styles.date}>
+            Spotted on {new Date(animal.spotted_at).toLocaleDateString()}
+          </Text>
+        </View>
+        
+        <View style={styles.detailsContainer}>
+          <View style={styles.detailRow}>
+            <Ionicons name="location" size={24} color="#4CAF50" />
+            <Text style={styles.detailText}>{getDistance()}</Text>
+          </View>
           
           <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={handleDeleteCat}
-            disabled={isDeleting}
+            style={styles.directionsButton}
+            onPress={openDirections}
           >
-            <Ionicons name="trash-outline" size={20} color="white" />
-            <Text style={styles.actionButtonText}>
-              {isDeleting ? 'Deleting...' : 'Delete'}
-            </Text>
+            <Ionicons name="navigate" size={24} color="white" />
+            <Text style={styles.directionsButtonText}>Get Directions</Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      <View style={styles.infoContainer}>
-        <View style={styles.infoRow}>
-          <Ionicons name="time-outline" size={20} color="#666" />
-          <Text style={styles.infoText}>
-            Spotted on {new Date(cat.spotted_at).toLocaleDateString()} at{' '}
-            {new Date(cat.spotted_at).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+        
+        <View style={styles.descriptionContainer}>
+          <Text style={styles.sectionTitle}>Description</Text>
+          <Text style={styles.descriptionText}>
+            {animal.description || 'No description provided'}
           </Text>
+          
+          {isOwner && (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() => setIsEditModalVisible(true)}
+            >
+              <Ionicons name="pencil" size={20} color="#4CAF50" />
+              <Text style={styles.editButtonText}>Edit Description</Text>
+            </TouchableOpacity>
+          )}
         </View>
-
-        <View style={styles.infoRow}>
-          <Ionicons name="location-outline" size={20} color="#666" />
-          <Text style={styles.infoText}>
-            Distance: {getDistance()} from your location
-          </Text>
-        </View>
-
-        {cat.description && (
-          <View style={styles.descriptionContainer}>
-            <Text style={styles.descriptionTitle}>Description</Text>
-            <Text style={styles.descriptionText}>{cat.description}</Text>
-          </View>
-        )}
-
+        
         <View style={styles.mapContainer}>
+          <Text style={styles.sectionTitle}>Location</Text>
           <MapView
             style={styles.map}
-            provider={undefined}
             initialRegion={{
-              latitude: cat.latitude,
-              longitude: cat.longitude,
+              latitude: animal.latitude,
+              longitude: animal.longitude,
               latitudeDelta: 0.01,
               longitudeDelta: 0.01,
             }}
@@ -340,58 +312,67 @@ const CatDetailsScreen: React.FC = () => {
           >
             <Marker
               coordinate={{
-                latitude: cat.latitude,
-                longitude: cat.longitude,
+                latitude: animal.latitude,
+                longitude: animal.longitude,
               }}
             >
-              <Ionicons name="paw" size={30} color="#FF5722" />
+              <Ionicons 
+                name={animal.animal_type === 'dog' ? 'paw' : 'paw-outline'} 
+                size={24} 
+                color={animal.animal_type === 'dog' ? '#8B4513' : '#2E7D32'} 
+              />
             </Marker>
           </MapView>
         </View>
-
-        <TouchableOpacity
-          style={styles.directionsButton}
-          onPress={openDirections}
-        >
-          <Ionicons name="navigate" size={20} color="white" />
-          <Text style={styles.directionsButtonText}>Get Directions</Text>
-        </TouchableOpacity>
+        
+        {isOwner && (
+          <View style={styles.ownerActionsContainer}>
+            <TouchableOpacity
+              style={[styles.deleteButton, isDeleting && styles.disabledButton]}
+              onPress={handleDelete}
+              disabled={isDeleting}
+            >
+              <Ionicons name="trash" size={24} color="white" />
+              <Text style={styles.deleteButtonText}>
+                {isDeleting ? 'Deleting...' : 'Delete This Sighting'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
-
-      {/* Edit Modal */}
+      
       <Modal
         visible={isEditModalVisible}
-        transparent={true}
+        transparent
         animationType="slide"
         onRequestClose={() => setIsEditModalVisible(false)}
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Cat Details</Text>
+            <Text style={styles.modalTitle}>Edit Description</Text>
             
-            <Text style={styles.inputLabel}>Description</Text>
             <TextInput
-              style={styles.input}
+              style={styles.modalInput}
               value={editDescription}
               onChangeText={setEditDescription}
-              placeholder="Describe the cat (color, behavior, etc.)"
               multiline
-              numberOfLines={4}
+              placeholder="Enter description"
+              placeholderTextColor="#999"
             />
             
             <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={styles.modalCancelButton}
                 onPress={() => setIsEditModalVisible(false)}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={styles.modalCancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={handleEditCat}
+                style={styles.modalSaveButton}
+                onPress={handleEditDescription}
               >
-                <Text style={styles.saveButtonText}>Save</Text>
+                <Text style={styles.modalSaveButtonText}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -443,37 +424,67 @@ const styles = StyleSheet.create({
   infoContainer: {
     padding: 15,
   },
-  infoRow: {
+  headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
   },
-  infoText: {
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginRight: 10,
+  },
+  date: {
     fontSize: 16,
-    marginLeft: 10,
+    color: '#666',
+  },
+  detailsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  detailText: {
+    fontSize: 16,
     color: '#333',
   },
-  descriptionContainer: {
-    backgroundColor: 'white',
-    padding: 15,
-    borderRadius: 10,
-    marginVertical: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+  directionsButton: {
+    backgroundColor: '#4CAF50',
+    padding: 10,
+    borderRadius: 5,
+    marginLeft: 10,
   },
-  descriptionTitle: {
+  directionsButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  descriptionContainer: {
+    marginBottom: 15,
+  },
+  sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#333',
   },
   descriptionText: {
     fontSize: 16,
-    lineHeight: 24,
     color: '#444',
+  },
+  editButton: {
+    backgroundColor: '#4CAF50',
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 10,
+  },
+  editButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   mapContainer: {
     borderRadius: 10,
@@ -488,25 +499,6 @@ const styles = StyleSheet.create({
   map: {
     height: 200,
   },
-  directionsButton: {
-    backgroundColor: '#4CAF50',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 15,
-    borderRadius: 10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  directionsButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
   ownerActionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -515,32 +507,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-  editButton: {
-    backgroundColor: '#4CAF50',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 5,
-    flex: 1,
-    marginRight: 10,
-  },
   deleteButton: {
     backgroundColor: '#F44336',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 15,
+    padding: 10,
     borderRadius: 5,
-    flex: 1,
-    marginLeft: 10,
   },
-  actionButtonText: {
+  deleteButtonText: {
     color: 'white',
+    fontSize: 16,
     fontWeight: 'bold',
-    marginLeft: 5,
+  },
+  disabledButton: {
+    backgroundColor: '#ccc',
   },
   modalContainer: {
     flex: 1,
@@ -565,12 +543,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
   },
-  inputLabel: {
-    fontSize: 16,
-    marginBottom: 5,
-    color: '#555',
-  },
-  input: {
+  modalInput: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 5,
@@ -584,26 +557,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  modalButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-    flex: 1,
-    alignItems: 'center',
-  },
-  cancelButton: {
+  modalCancelButton: {
     backgroundColor: '#f5f5f5',
-    marginRight: 10,
+    padding: 10,
+    borderRadius: 5,
   },
-  cancelButtonText: {
+  modalCancelButtonText: {
     color: '#333',
     fontWeight: 'bold',
   },
-  saveButton: {
+  modalSaveButton: {
     backgroundColor: '#4CAF50',
-    marginLeft: 10,
+    padding: 10,
+    borderRadius: 5,
   },
-  saveButtonText: {
+  modalSaveButtonText: {
     color: 'white',
     fontWeight: 'bold',
   },

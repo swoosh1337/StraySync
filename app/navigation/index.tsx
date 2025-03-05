@@ -85,7 +85,13 @@ const RootNavigator = () => {
       <Stack.Screen
         name="CatDetails"
         component={CatDetailsScreen}
-        options={{ title: "Animal Details" }}
+        options={{ 
+          title: "Animal Details",
+          headerStyle: {
+            backgroundColor: THEME.primary,
+          },
+          headerTintColor: THEME.secondary,
+        }}
       />
       <Stack.Screen
         name="AddCat"

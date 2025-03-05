@@ -106,7 +106,7 @@ const SettingsScreen: React.FC = () => {
 
   // Add these functions to handle button presses
   const handleSupportPress = () => {
-    // List of organizations that support stray cats
+    // List of organizations that support stray animals
     const supportOptions = [
       { name: 'ASPCA', url: 'https://www.aspca.org/donate' },
       { name: 'Best Friends Animal Society', url: 'https://bestfriends.org/donate' },
@@ -116,7 +116,7 @@ const SettingsScreen: React.FC = () => {
     
     // Show an alert with options
     Alert.alert(
-      'Support Stray Cats',
+      'Support Stray Animalsr',
       'Choose an organization to donate to:',
       [
         ...supportOptions.map(option => ({
@@ -137,7 +137,7 @@ const SettingsScreen: React.FC = () => {
       { 
         name: 'Email', 
         action: () => {
-          const email = 'support@straysync.com';
+          const email = 'tazigrigolia@gmail.com';
           const subject = 'StraySync App Feedback';
           const body = 'Hello StraySync team,\n\n';
           
@@ -156,26 +156,11 @@ const SettingsScreen: React.FC = () => {
       },
       {
         name: 'Website',
-        action: () => Linking.openURL('https://straysync.com/contact')
+        action: () => Linking.openURL('https://straysync.com/')
           .catch(err => {
             Alert.alert('Error', 'Could not open the website. Please try again later.');
           })
       },
-      {
-        name: 'Social Media',
-        action: () => {
-          Alert.alert(
-            'Social Media',
-            'Follow us on:',
-            [
-              { text: 'Twitter', onPress: () => Linking.openURL('https://twitter.com/straysync') },
-              { text: 'Instagram', onPress: () => Linking.openURL('https://instagram.com/straysync') },
-              { text: 'Facebook', onPress: () => Linking.openURL('https://facebook.com/straysync') },
-              { text: 'Cancel', style: 'cancel' as const }
-            ]
-          );
-        }
-      }
     ];
     
     // Show an alert with options
@@ -302,8 +287,8 @@ const SettingsScreen: React.FC = () => {
           <Text style={styles.appName}>StraySync</Text>
           <Text style={styles.appVersion}>Version 1.0.0</Text>
           <Text style={styles.appDescription}>
-            Help locate and track stray cats in your area. Take photos, mark
-            locations, and get notifications when you're near a stray cat.
+            Help locate and track stray animals in your area. Take photos, mark
+            locations, and get notifications when you're near a stray animal.
           </Text>
           
           <TouchableOpacity 
@@ -311,7 +296,7 @@ const SettingsScreen: React.FC = () => {
             onPress={handleSupportPress}
           >
             <Ionicons name="heart" size={20} color="white" />
-            <Text style={styles.aboutButtonText}>Support Stray Cats</Text>
+            <Text style={styles.aboutButtonText}>Support Stray Animals</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 

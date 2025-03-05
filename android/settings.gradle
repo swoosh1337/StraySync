@@ -21,7 +21,7 @@ extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
   }
 }
 
-rootProject.name = 'Stray Cat Finder'
+rootProject.name = 'StraySync'
 
 dependencyResolutionManagement {
   versionCatalogs {

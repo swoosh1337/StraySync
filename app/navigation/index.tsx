@@ -9,6 +9,7 @@ import MapScreen from '../screens/MapScreen';
 import AddCatScreen from '../screens/AddCatScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CatDetailsScreen from '../screens/CatDetailsScreen';
+import AnimalsListScreen from '../screens/AnimalsListScreen';
 
 // types for navigation parameters
 export type RootStackParamList = {
@@ -19,6 +20,7 @@ export type RootStackParamList = {
 
 export type MainTabParamList = {
   Map: undefined;
+  Animals: undefined;
   Settings: undefined;
 };
 
@@ -44,6 +46,8 @@ const MainTabNavigator = () => {
           
           if (route.name === 'Map') {
             iconName = focused ? 'map' : 'map-outline';
+          } else if (route.name === 'Animals') {
+            iconName = focused ? 'paw' : 'paw-outline';
           } else if (route.name === 'Settings') {
             iconName = focused ? 'settings' : 'settings-outline';
           }
@@ -65,7 +69,14 @@ const MainTabNavigator = () => {
         name="Map" 
         component={MapScreen} 
         options={{
-          title: "StraySync",
+          title: "Map",
+        }}
+      />
+      <Tab.Screen 
+        name="Animals" 
+        component={AnimalsListScreen}
+        options={{
+          title: "Animals",
         }}
       />
       <Tab.Screen name="Settings" component={SettingsScreen} />

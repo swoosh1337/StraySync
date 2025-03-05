@@ -54,7 +54,8 @@ const CatDetailsScreen: React.FC = () => {
         
         // Get current user ID
         const { data: { session } } = await supabase.auth.getSession();
-        const currentUserId = session?.user?.id || await AsyncStorage.getItem('anonymousId');
+        const currentUserId = session?.user?.id || await AsyncStorage.getItem('anonymousUserId');
+        console.log('Current user ID for ownership check:', currentUserId);
         setUserId(currentUserId);
         
         // Fetch animal details
@@ -65,7 +66,15 @@ const CatDetailsScreen: React.FC = () => {
           setEditDescription(fetchedAnimal.description || '');
           
           // Check if current user is the owner
-          setIsOwner(fetchedAnimal.user_id === currentUserId);
+          if (currentUserId) {
+            console.log('About to check ownership with user ID:', currentUserId);
+            const ownershipCheck = await catService.isUserOwner(catId, currentUserId);
+            console.log('Ownership check result:', ownershipCheck);
+            setIsOwner(ownershipCheck);
+          } else {
+            console.log('No current user ID available for ownership check');
+            setIsOwner(false);
+          }
         } else {
           Alert.alert('Error', 'Animal not found');
           navigation.goBack();
@@ -500,22 +509,33 @@ const styles = StyleSheet.create({
     height: 200,
   },
   ownerActionsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    marginTop: 20,
+    marginBottom: 10,
     padding: 15,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
   },
   deleteButton: {
     backgroundColor: '#F44336',
-    padding: 10,
-    borderRadius: 5,
+    padding: 15,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 15,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
   },
   deleteButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+    marginLeft: 10,
   },
   disabledButton: {
     backgroundColor: '#ccc',

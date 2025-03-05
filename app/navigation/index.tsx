@@ -66,16 +66,6 @@ const MainTabNavigator = () => {
         component={MapScreen} 
         options={{
           title: "StraySync",
-          headerRight: () => (
-            <TouchableOpacity
-              style={{ marginRight: 15 }}
-              onPress={() => {
-                // This will be handled in the MapScreen component
-              }}
-            >
-              <Ionicons name="add-circle" size={24} color={THEME.secondary} />
-            </TouchableOpacity>
-          ),
         }}
       />
       <Tab.Screen name="Settings" component={SettingsScreen} />
@@ -100,7 +90,13 @@ const RootNavigator = () => {
       <Stack.Screen
         name="AddCat"
         component={AddCatScreen}
-        options={{ title: "Add Animal" }}
+        options={{ 
+          title: "Add Animal",
+          headerStyle: {
+            backgroundColor: THEME.primary,
+          },
+          headerTintColor: THEME.secondary,
+        }}
       />
     </Stack.Navigator>
   );

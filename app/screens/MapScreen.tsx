@@ -187,9 +187,9 @@ const MapScreen: React.FC = () => {
   };
 
   // Check for nearby cats and send notifications if enabled
-  const checkForNearbyCats = async () => {
-    if (isNotificationsEnabled && currentLocation) {
-      await notificationService.checkForNearbyCats(
+  const checkForNearbyAnimals = async () => {
+    if (currentLocation && isNotificationsEnabled) {
+      await notificationService.checkForNearbyAnimals(
         currentLocation,
         notificationRadius,
         notificationTimeFrame
@@ -227,7 +227,7 @@ const MapScreen: React.FC = () => {
           
           // Check for nearby cats for notifications
           if (currentLocation) {
-            checkForNearbyCats();
+            checkForNearbyAnimals();
           }
         } catch (error) {
           console.error('Error refreshing data:', error);

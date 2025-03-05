@@ -938,16 +938,33 @@ export const catService = {
   // Check if a user owns a cat sighting
   async isUserOwner(catId: string, userId: string): Promise<boolean> {
     try {
+      console.log(`Checking if user ${userId} owns animal ${catId}`);
+      
+      if (!userId) {
+        console.log('No userId provided for ownership check');
+        return false;
+      }
+      
+      // Check the animals table
       const { data, error } = await supabase
-        .from('cats')
+        .from('animals')
         .select('user_id')
         .eq('id', catId)
         .single();
       
-      if (error || !data) {
-        console.error('Error checking cat ownership:', error?.message || 'Cat not found');
+      if (error) {
+        console.error('Error checking animal ownership:', error.message);
         return false;
       }
+      
+      if (!data) {
+        console.log('Animal not found in database');
+        return false;
+      }
+      
+      console.log('Found in animals table, user_id:', data.user_id);
+      console.log('Current user ID:', userId);
+      console.log('Do they match?', data.user_id === userId);
       
       return data.user_id === userId;
     } catch (error: any) {
@@ -989,34 +1006,23 @@ export const catService = {
     }
   },
   
-  // Delete a cat
+  // Delete an animal
   async deleteCat(id: string): Promise<boolean> {
     try {
-      // Try to delete from animals table first
-      const { error: animalError } = await supabase
+      console.log(`Attempting to delete animal ${id}`);
+      
+      // Delete from animals table
+      const { error } = await supabase
         .from('animals')
         .delete()
         .eq('id', id);
       
-      if (!animalError) {
-        console.log(`Successfully deleted animal ${id} from animals table`);
-        return true;
-      }
-      
-      console.log(`Failed to delete from animals table, trying cats table: ${animalError.message}`);
-      
-      // Fall back to cats table
-      const { error } = await supabase
-        .from('cats')
-        .delete()
-        .eq('id', id);
-      
       if (error) {
-        console.error('Error deleting cat:', error);
+        console.error('Error deleting animal:', error.message);
         return false;
       }
       
-      console.log(`Successfully deleted animal ${id} from cats table`);
+      console.log(`Successfully deleted animal ${id} from animals table`);
       return true;
     } catch (error: any) {
       console.error('Error in deleteCat:', error.message || error);

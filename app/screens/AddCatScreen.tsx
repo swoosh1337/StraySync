@@ -374,17 +374,6 @@ const AddCatScreen: React.FC = () => {
           contentContainerStyle={{ paddingBottom: 100 }}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Ionicons name="arrow-back" size={24} color="#333" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Add {animalType === 'cat' ? 'Cat' : 'Dog'}</Text>
-            <View style={styles.placeholder} />
-          </View>
-
           <View style={styles.mapContainer}>
             <MapView
               style={styles.map}
@@ -488,23 +477,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-  },
-  backButton: {
-    padding: 5,
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  placeholder: {
-    width: 24,
   },
   mapContainer: {
     margin: 15,

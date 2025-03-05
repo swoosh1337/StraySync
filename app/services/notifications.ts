@@ -131,8 +131,8 @@ export const notificationService = {
     }
   },
   
-  // Check for nearby cats and send notifications
-  async checkForNearbyCats(
+  // Check for nearby animals and send notifications
+  async checkForNearbyAnimals(
     location: LocationCoordinates,
     radiusKm: number,
     timeFrameHours: number
@@ -141,7 +141,7 @@ export const notificationService = {
       // First, check if we need to reset notification state
       await this.resetNotificationStateIfNeeded(location.latitude, location.longitude);
       
-      // Check if we've recently notified about cats in this area
+      // Check if we've recently notified about animals in this area
       const recentlyNotified = await this.hasRecentlyNotifiedArea(
         location.latitude,
         location.longitude,
@@ -149,52 +149,69 @@ export const notificationService = {
       );
       
       if (recentlyNotified) {
-        console.log('Recently notified about cats in this area, skipping notification');
+        console.log('Recently notified about animals in this area, skipping notification');
         return;
       }
       
-      // Get all cats
-      const allCats = await catService.getCats();
+      // Get all animals
+      const allAnimals = await catService.getCats();
       
-      // Filter cats by distance and time
+      // Filter animals by distance and time
       const now = new Date();
       const timeFrameMs = timeFrameHours * 60 * 60 * 1000;
-      const nearbyCats = allCats.filter((cat) => {
+      const nearbyAnimals = allAnimals.filter((animal) => {
         // Check if within radius
         const distance = locationService.calculateDistance(
           location.latitude,
           location.longitude,
-          cat.latitude,
-          cat.longitude
+          animal.latitude,
+          animal.longitude
         );
         
         // Check if within time frame
-        const catTime = new Date(cat.spotted_at).getTime();
-        const timeDiff = now.getTime() - catTime;
+        const animalTime = new Date(animal.spotted_at).getTime();
+        const timeDiff = now.getTime() - animalTime;
         
-        // Check if we've already notified about this cat
-        const alreadyNotified = this.notifiedCatIds.has(cat.id);
+        // Check if we've already notified about this animal
+        const alreadyNotified = this.notifiedCatIds.has(animal.id);
         
         return distance <= radiusKm && timeDiff <= timeFrameMs && !alreadyNotified;
       });
       
-      if (nearbyCats.length > 0) {
-        // Mark all these cats as notified
-        nearbyCats.forEach((cat) => {
-          this.notifiedCatIds.add(cat.id);
+      if (nearbyAnimals.length > 0) {
+        // Group animals by type
+        const cats = nearbyAnimals.filter(animal => !animal.animal_type || animal.animal_type === 'cat');
+        const dogs = nearbyAnimals.filter(animal => animal.animal_type === 'dog');
+        
+        // Mark all these animals as notified
+        nearbyAnimals.forEach((animal) => {
+          this.notifiedCatIds.add(animal.id);
         });
         
         // Mark this area as notified
         await this.markAreaAsNotified(location.latitude, location.longitude, radiusKm);
         
-        // Send notification
-        const title = nearbyCats.length === 1
-          ? 'Stray Cat Nearby!'
-          : `${nearbyCats.length} Stray Cats Nearby!`;
+        // Create notification message based on animal types
+        let title = '';
+        let body = '';
         
-        const body = nearbyCats.length === 1
-          ? `A stray cat was spotted ${this.getTimeAgo(nearbyCats[0].spotted_at)} near you.`
-          : `${nearbyCats.length} stray cats were spotted near you recently.`;
+        if (cats.length > 0 && dogs.length > 0) {
+          // Both cats and dogs
+          title = `${cats.length + dogs.length} Stray Animals Nearby!`;
+          body = `${cats.length} cat${cats.length !== 1 ? 's' : ''} and ${dogs.length} dog${dogs.length !== 1 ? 's' : ''} were spotted near you recently.`;
+        } else if (cats.length > 0) {
+          // Only cats
+          title = cats.length === 1 ? 'Stray Cat Nearby!' : `${cats.length} Stray Cats Nearby!`;
+          body = cats.length === 1
+            ? `A stray cat was spotted ${this.getTimeAgo(cats[0].spotted_at)} near you.`
+            : `${cats.length} stray cats were spotted near you recently.`;
+        } else {
+          // Only dogs
+          title = dogs.length === 1 ? 'Stray Dog Nearby!' : `${dogs.length} Stray Dogs Nearby!`;
+          body = dogs.length === 1
+            ? `A stray dog was spotted ${this.getTimeAgo(dogs[0].spotted_at)} near you.`
+            : `${dogs.length} stray dogs were spotted near you recently.`;
+        }
         
         await this.sendNotification(title, body);
         
@@ -202,7 +219,7 @@ export const notificationService = {
         await this.saveNotifiedCats();
       }
     } catch (error) {
-      console.error('Error checking for nearby cats:', error);
+      console.error('Error checking for nearby animals:', error);
     }
   },
   

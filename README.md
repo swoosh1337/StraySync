@@ -1,13 +1,13 @@
-# Stray Cat Finder
+# StraySync
 
-A React Native mobile app that helps users locate and track stray cats in their area. Users can pin the exact location where they spot a stray cat by uploading a photo and marking it on the map. When another user taps the pin, they'll see the cat's photo and get directions to that location.
+A React Native mobile app that helps users locate and track stray animalsin their area. Users can pin the exact location where they spot a stray dog or cat by uploading a photo and marking it on the map. When another user taps the pin, they'll see the cat's photo and get directions to that location.
 
 ## Features
 
-- **Interactive Map**: View stray cat sightings on a Google Maps-like interface
+- **Interactive Map**: View stray animal sightings on a Google Maps-like interface
 - **Add Cat Sightings**: Upload photos and mark the exact location of stray cats
-- **Cat Details**: View photos, descriptions, and directions to stray cats
-- **Proximity Notifications**: Get alerts when you're near a stray cat location
+- **Animal Details**: View photos, descriptions, and directions to stray cats
+- **Proximity Notifications**: Get alerts when you're near a stray animal location
 - **Customizable Settings**: Set notification radius and time frame preferences
 
 ## Tech Stack

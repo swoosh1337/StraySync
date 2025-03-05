@@ -45,6 +45,7 @@ const AnimalsListScreen: React.FC = () => {
     card: '#FFFFFF',
     text: '#212121',
     lightText: '#757575',
+    dogColor: '#8B4513', // Brown color for dogs
   };
 
   const fetchAnimals = useCallback(async () => {
@@ -178,6 +179,9 @@ const AnimalsListScreen: React.FC = () => {
   };
 
   const renderAnimalItem = ({ item }: { item: Cat }) => {
+    const isDog = item.animal_type === 'dog';
+    const iconColor = isDog ? THEME.dogColor : THEME.secondary;
+    
     return (
       <TouchableOpacity
         style={styles.animalCard}
@@ -192,12 +196,12 @@ const AnimalsListScreen: React.FC = () => {
         <View style={styles.animalInfo}>
           <View style={styles.animalTypeContainer}>
             <Ionicons 
-              name={item.animal_type === 'dog' ? 'paw' : 'logo-octocat'} 
+              name={isDog ? 'paw' : 'logo-octocat'} 
               size={16} 
-              color={THEME.secondary} 
+              color={iconColor} 
             />
-            <Text style={styles.animalType}>
-              {item.animal_type === 'dog' ? 'Dog' : 'Cat'}
+            <Text style={[styles.animalType, { color: iconColor }]}>
+              {isDog ? 'Dog' : 'Cat'}
             </Text>
           </View>
           <Text style={styles.animalDescription} numberOfLines={2}>

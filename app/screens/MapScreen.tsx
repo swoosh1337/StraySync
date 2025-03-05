@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import MapView, { Marker, Callout } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useNavigation, useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
 import { Cat, catService } from '../services/supabase';
@@ -24,6 +24,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import * as Location from 'expo-location';
 import { LoadingOverlay } from '../components';
 import { useLoading } from '../hooks';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type MapScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -50,6 +51,14 @@ const MapScreen: React.FC = () => {
   } = useSettings();
   const [lastCleanupTime, setLastCleanupTime] = useState<number>(0);
   const [animalFilter, setAnimalFilter] = useState<AnimalFilter>('all');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+
+  // Function to force a refresh - can be exposed via a ref if needed
+  const forceRefresh = useCallback(() => {
+    console.log('Force refresh triggered');
+    setRefreshTrigger(prev => prev + 1);
+  }, []);
 
   // Fetch animals from the database based on filter
   const fetchAnimals = useCallback(async () => {
@@ -203,7 +212,11 @@ const MapScreen: React.FC = () => {
       try {
         await withLoading(async () => {
           await getCurrentLocation();
-          // We'll fetch animals in the isFocused effect, so no need to do it here
+          // Fetch animals immediately on first load
+          const initialAnimals = await fetchAnimals();
+          setCats(initialAnimals);
+          setInitialLoadComplete(true);
+          console.log(`Initial load complete with ${initialAnimals.length} animals`);
         });
       } catch (error) {
         console.error('Error initializing map:', error);
@@ -215,29 +228,67 @@ const MapScreen: React.FC = () => {
     // Empty dependency array to ensure this only runs once on mount
   }, []);
 
-  // Refresh data when the screen is focused
-  useEffect(() => {
-    if (isFocused) {
-      console.log('Screen focused, refreshing data...');
+  // Use useFocusEffect instead for more reliable focus handling
+  useFocusEffect(
+    useCallback(() => {
+      console.log('Map screen focused (useFocusEffect), refreshing data...');
+      
+      let isMounted = true;
       
       const refreshData = async () => {
+        if (!isMounted) return;
+        
         try {
-          // Only show loading indicator when returning from another screen
-          await fetchAnimals();
+          // Check if we need to refresh the map (after adding a new animal)
+          const needsRefresh = await AsyncStorage.getItem('mapNeedsRefresh');
+          if (needsRefresh === 'true') {
+            console.log('Map needs refresh flag detected, forcing refresh');
+            // Clear the flag
+            await AsyncStorage.removeItem('mapNeedsRefresh');
+            
+            // Immediately fetch new data without waiting for state update
+            const refreshedAnimals = await fetchAnimals();
+            if (isMounted) {
+              setCats(refreshedAnimals);
+              console.log(`Immediate refresh with ${refreshedAnimals.length} animals after adding new animal`);
+            }
+            
+            // Also increment the trigger for any other components that depend on it
+            setRefreshTrigger(prev => prev + 1);
+            return; // Skip the normal refresh flow since we already did it
+          }
+          
+          // Only do a normal refresh if we've already done the initial load
+          // This prevents duplicate fetching on first app open
+          if (initialLoadComplete) {
+            console.log('Starting to refresh map data...');
+            // Fetch animals with loading indicator
+            const refreshedAnimals = await fetchAnimals();
+            if (isMounted) {
+              setCats(refreshedAnimals);
+              console.log(`Refreshed map with ${refreshedAnimals.length} animals`);
+            }
+          }
           
           // Check for nearby cats for notifications
-          if (currentLocation) {
+          if (currentLocation && isMounted) {
             checkForNearbyAnimals();
           }
         } catch (error) {
-          console.error('Error refreshing data:', error);
+          console.error('Error refreshing map data:', error);
         }
       };
       
       // Execute refresh immediately
       refreshData();
-    }
-  }, [isFocused, fetchAnimals]); // Remove currentLocation from dependencies to reduce fetches
+      
+      // Return cleanup function
+      return () => {
+        console.log('Map screen blurred (useFocusEffect cleanup)');
+        isMounted = false;
+      };
+    }, [fetchAnimals, currentLocation, refreshTrigger])
+  );
   
   // Set up cleanup interval - only run once on component mount
   useEffect(() => {
@@ -316,15 +367,25 @@ const MapScreen: React.FC = () => {
   // Handle manual refresh
   const handleRefresh = async () => {
     console.log('Manual refresh requested');
-    
     try {
-      await withLoading(Promise.all([
-        getCurrentLocation(),
-        fetchAnimals()
-      ]));
-      console.log('Manual refresh completed');
+      // Increment the refresh trigger to force a refresh
+      setRefreshTrigger(prev => prev + 1);
+      
+      // Fetch animals immediately
+      const refreshedAnimals = await fetchAnimals();
+      setCats(refreshedAnimals);
+      console.log(`Manually refreshed with ${refreshedAnimals.length} animals`);
+      
+      // Get current location
+      await getCurrentLocation();
+      
+      // Check for nearby animals
+      if (currentLocation) {
+        await checkForNearbyAnimals();
+      }
     } catch (error) {
       console.error('Error during manual refresh:', error);
+      Alert.alert('Error', 'Failed to refresh data');
     }
   };
 
@@ -425,19 +486,8 @@ const MapScreen: React.FC = () => {
     fetchAnimals();
   }, [animalFilter, fetchAnimals]);
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={styles.loadingText}>Loading map...</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
-      <LoadingOverlay visible={isLoading} message="Loading animals..." />
-      
       {region && (
         <MapView
           ref={mapRef}
@@ -450,11 +500,19 @@ const MapScreen: React.FC = () => {
         </MapView>
       )}
 
-      {/* Add button - bottom right */}
-      <TouchableOpacity style={styles.addButton} onPress={handleAddCat}>
-        <Ionicons name="add" size={30} color="white" />
-      </TouchableOpacity>
-
+      {/* Show loading indicator overlay while loading */}
+      {isLoading && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#4CAF50" />
+            <Text style={styles.loadingText}>Loading animals...</Text>
+          </View>
+        </View>
+      )}
+      
+      {/* Filter buttons */}
+      {renderFilterButtons()}
+      
       {/* Map control buttons - top right */}
       <View style={styles.mapControlsContainer}>
         {/* Location button */}
@@ -473,8 +531,14 @@ const MapScreen: React.FC = () => {
           <Ionicons name="refresh" size={24} color="#4CAF50" />
         </TouchableOpacity>
       </View>
-
-      {renderFilterButtons()}
+      
+      {/* Add button */}
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={handleAddCat}
+      >
+        <Ionicons name="add" size={30} color="white" />
+      </TouchableOpacity>
     </View>
   );
 };
@@ -487,14 +551,32 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  loadingContainer: {
-    flex: 1,
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingBox: {
+    backgroundColor: 'white',
+    padding: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
+    color: '#333',
   },
   addButton: {
     position: 'absolute',
@@ -512,19 +594,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 3,
   },
-  mapControlsContainer: {
+  refreshButton: {
     position: 'absolute',
-    top: 20,
+    bottom: 20,
     right: 20,
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 10,
-  },
-  controlButton: {
-    backgroundColor: 'white',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    backgroundColor: '#4CAF50',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 5,
@@ -610,6 +687,27 @@ const styles = StyleSheet.create({
   },
   dogMarker: {
     borderColor: '#8B4513',
+  },
+  mapControlsContainer: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
+  controlButton: {
+    backgroundColor: 'white',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
 });
 

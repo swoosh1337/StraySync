@@ -19,7 +19,7 @@ export type RootStackParamList = {
 };
 
 export type MainTabParamList = {
-  Map: undefined;
+  Map: { forceRefresh?: () => void } | undefined;
   Animals: undefined;
   Settings: undefined;
 };

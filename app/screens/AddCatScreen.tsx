@@ -16,7 +16,7 @@ import {
   LayoutChangeEvent,
   SafeAreaView,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp, CommonActions } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
 import * as ImagePicker from 'expo-image-picker';
@@ -176,9 +176,9 @@ const AddCatScreen: React.FC = () => {
     setInputY(y + height / 2);
   };
 
-  // Add a function to handle keyboard focus
+  // Function to handle keyboard focus
   const handleDescriptionFocus = () => {
-    // Add a small delay to ensure the scroll happens after the keyboard appears
+    // Small delay to ensure the scroll happens after the keyboard appears
     setTimeout(() => {
       if (scrollViewRef.current && inputY > 0) {
         // Scroll to a position that keeps the input visible but not at the very bottom
@@ -297,11 +297,27 @@ const AddCatScreen: React.FC = () => {
       
       if (newCat) {
         console.log('Successfully added animal:', newCat.id);
-        Alert.alert(
-          'Success',
-          `Thank you for reporting this ${animalType} sighting!`,
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
-        );
+        
+        // Set a flag in AsyncStorage to indicate a refresh is needed
+        try {
+          console.log('Setting mapNeedsRefresh flag to true');
+          await AsyncStorage.setItem('mapNeedsRefresh', 'true');
+          console.log('Successfully set mapNeedsRefresh flag');
+        } catch (error) {
+          console.error('Failed to set refresh flag:', error);
+        }
+        
+        // Navigate back immediately, then show the alert
+        // This ensures we return to the map screen before the alert is shown
+        navigation.goBack();
+        
+        // Short timeout to ensure navigation completes before showing alert
+        setTimeout(() => {
+          Alert.alert(
+            'Success',
+            `Thank you for reporting this ${animalType} sighting!`
+          );
+        }, 100);
       } else {
         console.error('Failed to add animal to database');
         Alert.alert('Error', 'Failed to save animal sighting. Please try again.');

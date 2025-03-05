@@ -109,18 +109,20 @@ const CatDetailsScreen: React.FC = () => {
         if (location) {
           setCurrentLocation(location);
           
-          // Calculate distance
-          const distanceInMeters = locationService.calculateDistance(
+          // Calculate distance - note that calculateDistance returns distance in kilometers
+          const distanceInKm = locationService.calculateDistance(
             location.latitude,
             location.longitude,
             animalDetails.latitude,
             animalDetails.longitude
           );
           
+          // Convert to meters for display if less than 1 km
+          const distanceInMeters = distanceInKm * 1000;
+          
           if (distanceInMeters < 1000) {
             setDistance(`${Math.round(distanceInMeters)} meters away`);
           } else {
-            const distanceInKm = distanceInMeters / 1000;
             setDistance(`${distanceInKm.toFixed(1)} km away`);
           }
         }
@@ -224,7 +226,7 @@ const CatDetailsScreen: React.FC = () => {
     }
   };
 
-  // Add a function to handle the "View on Full Map" button
+  // Handle the "View on Full Map" button
   const handleViewOnMap = () => {
     if (animal) {
       // Use the locationService to open the map with directions
@@ -353,7 +355,7 @@ const CatDetailsScreen: React.FC = () => {
                 style={styles.editDescriptionButton}
                 onPress={handleEditDescription}
               >
-                <Ionicons name="create-outline" size={20} color="#fff" />
+                <Ionicons name="create-outline" size={22} color="#fff" />
                 <Text style={styles.editButtonText}>Edit Description</Text>
               </TouchableOpacity>
               
@@ -361,7 +363,7 @@ const CatDetailsScreen: React.FC = () => {
                 style={styles.deleteButton}
                 onPress={handleDelete}
               >
-                <Ionicons name="trash-outline" size={20} color="#fff" />
+                <Ionicons name="trash-outline" size={22} color="#fff" />
                 <Text style={styles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>
             </View>
@@ -555,12 +557,19 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     backgroundColor: '#D32F2F',
-    borderRadius: 8,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
-    marginTop: 8,
+    height: 56,
+    flex: 1,
+    marginLeft: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   deleteButtonText: {
     color: '#fff',
@@ -634,17 +643,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 24,
   },
   editDescriptionButton: {
     backgroundColor: '#2E7D32',
-    borderRadius: 8,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
-    marginTop: 8,
+    height: 56,
     flex: 1,
     marginRight: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });
 

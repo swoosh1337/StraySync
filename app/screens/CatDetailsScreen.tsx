@@ -1,83 +1,128 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Image,
   TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
   Alert,
-  Linking,
-  Platform,
   Modal,
   TextInput,
+  ActivityIndicator,
+  ScrollView,
+  SafeAreaView,
+  Share,
 } from 'react-native';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList, Cat } from '../types';
-import { Ionicons } from '@expo/vector-icons';
+import { RootStackParamList } from '../navigation';
 import MapView, { Marker } from 'react-native-maps';
-import { catService } from '../services/supabase';
-import { locationService } from '../services/location';
-import { supabase } from '../services/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import { catService, supabase } from '../services/supabase';
+import { locationService } from '../services/location/locationService';
+import { formatDistanceToNow } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-type CatDetailsScreenRouteProp = RouteProp<RootStackParamList, 'CatDetails'>;
 type CatDetailsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   'CatDetails'
 >;
 
+type CatDetailsScreenRouteProp = RouteProp<RootStackParamList, 'CatDetails'>;
+
 const CatDetailsScreen: React.FC = () => {
-  const route = useRoute<CatDetailsScreenRouteProp>();
   const navigation = useNavigation<CatDetailsScreenNavigationProp>();
-  const { catId } = route.params;
-  
-  const [animal, setAnimal] = useState<Cat | null>(null);
+  const route = useRoute<CatDetailsScreenRouteProp>();
+  const mapRef = useRef<MapView>(null);
+
   const [loading, setLoading] = useState(true);
-  const [currentLocation, setCurrentLocation] = useState<{
-    latitude: number;
-    longitude: number;
-  } | null>(null);
+  const [animal, setAnimal] = useState<any>(null);
+  const [currentLocation, setCurrentLocation] = useState<any>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
-  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-  const [editDescription, setEditDescription] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editedDescription, setEditedDescription] = useState('');
+  const [savingDescription, setSavingDescription] = useState(false);
+  const [distance, setDistance] = useState<string | null>(null);
 
-  // Fetch animal details and check ownership
+  // Theme colors
+  const THEME = {
+    primary: '#D0F0C0',
+    secondary: '#2E7D32',
+    accent: '#388E3C',
+    inactive: '#90A4AE',
+    danger: '#D32F2F',
+  };
+
   useEffect(() => {
     const fetchAnimalDetails = async () => {
       try {
         setLoading(true);
         
         // Get current user ID
-        const { data: { session } } = await supabase.auth.getSession();
-        const currentUserId = session?.user?.id || await AsyncStorage.getItem('anonymousUserId');
-        console.log('Current user ID for ownership check:', currentUserId);
-        setUserId(currentUserId);
+        const { data } = await supabase.auth.getSession();
+        let currentUserId = data.session?.user?.id;
         
-        // Fetch animal details
-        const fetchedAnimal = await catService.getCatById(catId);
-        
-        if (fetchedAnimal) {
-          setAnimal(fetchedAnimal);
-          setEditDescription(fetchedAnimal.description || '');
-          
-          // Check if current user is the owner
-          if (currentUserId) {
-            console.log('About to check ownership with user ID:', currentUserId);
-            const ownershipCheck = await catService.isUserOwner(catId, currentUserId);
-            console.log('Ownership check result:', ownershipCheck);
-            setIsOwner(ownershipCheck);
-          } else {
-            console.log('No current user ID available for ownership check');
-            setIsOwner(false);
+        // For anonymous users, get stored ID
+        if (!currentUserId) {
+          try {
+            const storedId = await AsyncStorage.getItem('anonymousUserId');
+            if (storedId) {
+              currentUserId = storedId;
+              console.log('Retrieved anonymous ID from storage:', storedId);
+            }
+          } catch (error) {
+            console.error('Error retrieving anonymous ID:', error);
           }
-        } else {
+        }
+        
+        setUserId(currentUserId || null);
+        
+        // Get animal details
+        const animalId = route.params?.catId || '';
+        if (!animalId) {
+          console.error('No animal ID provided');
           Alert.alert('Error', 'Animal not found');
           navigation.goBack();
+          return;
+        }
+        
+        const animalDetails = await catService.getCatById(animalId);
+        if (!animalDetails) {
+          console.error('Animal not found');
+          Alert.alert('Error', 'Animal not found');
+          navigation.goBack();
+          return;
+        }
+        
+        setAnimal(animalDetails);
+        setEditedDescription(animalDetails.description || '');
+        
+        // Check if current user is the owner
+        if (currentUserId) {
+          const ownerStatus = await catService.isUserOwner(animalId, currentUserId);
+          setIsOwner(ownerStatus);
+        }
+        
+        // Get current location for distance calculation
+        const location = await locationService.getCurrentLocation();
+        if (location) {
+          setCurrentLocation(location);
+          
+          // Calculate distance
+          const distanceInMeters = locationService.calculateDistance(
+            location.latitude,
+            location.longitude,
+            animalDetails.latitude,
+            animalDetails.longitude
+          );
+          
+          if (distanceInMeters < 1000) {
+            setDistance(`${Math.round(distanceInMeters)} meters away`);
+          } else {
+            const distanceInKm = distanceInMeters / 1000;
+            setDistance(`${distanceInKm.toFixed(1)} km away`);
+          }
         }
       } catch (error) {
         console.error('Error fetching animal details:', error);
@@ -88,102 +133,60 @@ const CatDetailsScreen: React.FC = () => {
     };
     
     fetchAnimalDetails();
-  }, [catId, navigation]);
-  
-  // Get current location for distance calculation
-  useEffect(() => {
-    const getCurrentLocation = async () => {
-      try {
-        const location = await locationService.getCurrentLocation();
-        if (location) {
-          setCurrentLocation(location);
-        }
-      } catch (error) {
-        console.error('Error getting current location:', error);
-      }
-    };
-    
-    getCurrentLocation();
-  }, []);
-  
-  // Calculate distance between current location and animal
-  const getDistance = () => {
-    if (!currentLocation || !animal) return 'Unknown distance';
-    
-    const distance = locationService.calculateDistance(
-      currentLocation.latitude,
-      currentLocation.longitude,
-      animal.latitude,
-      animal.longitude
+  }, [route.params?.catId]);
+
+  const handleDelete = async () => {
+    Alert.alert(
+      'Confirm Deletion',
+      'Are you sure you want to delete this animal sighting?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              const animalId = route.params?.catId || '';
+              if (!animalId) return;
+              
+              const success = await catService.deleteCat(animalId);
+              if (success) {
+                Alert.alert('Success', 'Animal sighting deleted successfully');
+                navigation.goBack();
+              } else {
+                Alert.alert('Error', 'Failed to delete animal sighting');
+                setLoading(false);
+              }
+            } catch (error) {
+              console.error('Error deleting animal:', error);
+              Alert.alert('Error', 'Failed to delete animal sighting');
+              setLoading(false);
+            }
+          },
+        },
+      ]
     );
-    
-    if (distance < 1) {
-      return `${Math.round(distance * 1000)} meters away`;
-    } else {
-      return `${distance.toFixed(1)} km away`;
-    }
-  };
-  
-  // Open directions in maps app
-  const openDirections = async () => {
-    if (!animal) return;
-    
-    try {
-      // Get current location
-      const currentLocation = await locationService.getCurrentLocation();
-      
-      if (!currentLocation) {
-        Alert.alert('Error', 'Could not determine your current location');
-        return;
-      }
-      
-      // Encode destination name for URL
-      const destinationName = animal.animal_type === 'dog' ? 'Stray Dog Location' : 'Stray Cat Location';
-      const encodedDestName = encodeURIComponent(destinationName);
-      
-      // Construct URL for Google Maps
-      const googleMapsUrl = Platform.select({
-        ios: `comgooglemaps://?saddr=${currentLocation.latitude},${currentLocation.longitude}&daddr=${animal.latitude},${animal.longitude}&directionsmode=walking&q=${encodedDestName}`,
-        android: `google.navigation:q=${animal.latitude},${animal.longitude}&mode=w`,
-        default: `https://www.google.com/maps/dir/?api=1&origin=${currentLocation.latitude},${currentLocation.longitude}&destination=${animal.latitude},${animal.longitude}&travelmode=walking&q=${encodedDestName}`,
-      });
-      
-      // Check if Google Maps is installed
-      const canOpenGoogleMaps = await Linking.canOpenURL(googleMapsUrl);
-      
-      if (canOpenGoogleMaps) {
-        // Open Google Maps
-        await Linking.openURL(googleMapsUrl);
-        return;
-      }
-      
-      // Fallback to Apple Maps on iOS or web URL on other platforms
-      const appleMapsUrl = `http://maps.apple.com/?saddr=${currentLocation.latitude},${currentLocation.longitude}&daddr=${animal.latitude},${animal.longitude}&dirflg=w&q=${encodedDestName}`;
-      const defaultMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${currentLocation.latitude},${currentLocation.longitude}&destination=${animal.latitude},${animal.longitude}&travelmode=walking&q=${encodedDestName}`;
-      
-      const mapsUrl = Platform.OS === 'ios' ? appleMapsUrl : defaultMapsUrl;
-      
-      await Linking.openURL(mapsUrl);
-    } catch (error) {
-      console.error('Error opening directions:', error);
-      Alert.alert('Error', 'Could not open maps application');
-    }
   };
 
-  // Handle edit description
-  const handleEditDescription = async () => {
-    if (!animal) return;
-    
+  const handleEditDescription = () => {
+    setEditModalVisible(true);
+  };
+
+  const handleSaveDescription = async () => {
     try {
-      setIsEditModalVisible(false);
+      setSavingDescription(true);
+      const animalId = route.params?.catId || '';
+      if (!animalId) return;
       
-      const success = await catService.updateCatDescription(animal.id, editDescription);
+      const success = await catService.updateCatDescription(
+        animalId,
+        editedDescription
+      );
       
       if (success) {
-        setAnimal({
-          ...animal,
-          description: editDescription
-        });
+        setAnimal({ ...animal, description: editedDescription });
+        setEditModalVisible(false);
         Alert.alert('Success', 'Description updated successfully');
       } else {
         Alert.alert('Error', 'Failed to update description');
@@ -191,60 +194,61 @@ const CatDetailsScreen: React.FC = () => {
     } catch (error) {
       console.error('Error updating description:', error);
       Alert.alert('Error', 'Failed to update description');
+    } finally {
+      setSavingDescription(false);
     }
   };
-  
-  // Handle delete animal
-  const handleDelete = async () => {
-    if (!animal) return;
-    
-    Alert.alert(
-      'Confirm Delete',
-      `Are you sure you want to delete this ${animal.animal_type || 'animal'} sighting?`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsDeleting(true);
-              
-              const success = await catService.deleteCat(animal.id);
-              
-              if (success) {
-                Alert.alert('Success', 'Animal sighting deleted successfully');
-                navigation.goBack();
-              } else {
-                Alert.alert('Error', 'Failed to delete animal sighting');
-                setIsDeleting(false);
-              }
-            } catch (error) {
-              console.error('Error deleting animal:', error);
-              Alert.alert('Error', 'Failed to delete animal sighting');
-              setIsDeleting(false);
-            }
-          }
-        }
-      ]
-    );
+
+  const handleShare = async () => {
+    try {
+      const message = `Check out this stray cat I found using the Stray Cat Finder app! ${
+        animal?.description || ''
+      }`;
+      
+      await Share.share({
+        message,
+        title: `Stray Cat Sighting`,
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+      Alert.alert('Error', 'Failed to share cat sighting');
+    }
   };
-  
+
+  const formatDate = (dateString: string) => {
+    try {
+      return formatDistanceToNow(new Date(dateString), { addSuffix: true });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Unknown date';
+    }
+  };
+
+  // Add a function to handle the "View on Full Map" button
+  const handleViewOnMap = () => {
+    if (animal) {
+      // Use the locationService to open the map with directions
+      locationService.openMapsWithDirections(
+        animal.latitude,
+        animal.longitude,
+        'Cat Location'
+      );
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+        <ActivityIndicator size="large" color={THEME.secondary} />
         <Text style={styles.loadingText}>Loading animal details...</Text>
       </View>
     );
   }
-  
+
   if (!animal) {
     return (
       <View style={styles.errorContainer}>
+        <Ionicons name="alert-circle" size={64} color={THEME.danger} />
         <Text style={styles.errorText}>Animal not found</Text>
         <TouchableOpacity
           style={styles.backButton}
@@ -255,345 +259,392 @@ const CatDetailsScreen: React.FC = () => {
       </View>
     );
   }
-  
+
   return (
-    <ScrollView style={styles.container}>
-      <Image
-        source={{ uri: animal.image_url }}
-        style={styles.image}
-        resizeMode="cover"
-      />
-      
-      <View style={styles.infoContainer}>
-        <View style={styles.headerContainer}>
-          <Text style={styles.title}>
-            {animal.animal_type === 'dog' ? 'Stray Dog' : 'Stray Cat'}
-          </Text>
-          <Text style={styles.date}>
-            Spotted on {new Date(animal.spotted_at).toLocaleDateString()}
-          </Text>
-        </View>
-        
-        <View style={styles.detailsContainer}>
-          <View style={styles.detailRow}>
-            <Ionicons name="location" size={24} color="#4CAF50" />
-            <Text style={styles.detailText}>{getDistance()}</Text>
-          </View>
-          
-          <TouchableOpacity
-            style={styles.directionsButton}
-            onPress={openDirections}
-          >
-            <Ionicons name="navigate" size={24} color="white" />
-            <Text style={styles.directionsButtonText}>Get Directions</Text>
-          </TouchableOpacity>
-        </View>
-        
-        <View style={styles.descriptionContainer}>
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.descriptionText}>
-            {animal.description || 'No description provided'}
-          </Text>
-          
-          {isOwner && (
-            <TouchableOpacity
-              style={styles.editButton}
-              onPress={() => setIsEditModalVisible(true)}
-            >
-              <Ionicons name="pencil" size={20} color="#4CAF50" />
-              <Text style={styles.editButtonText}>Edit Description</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        
-        <View style={styles.mapContainer}>
-          <Text style={styles.sectionTitle}>Location</Text>
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: animal.latitude,
-              longitude: animal.longitude,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            scrollEnabled={false}
-            zoomEnabled={false}
-          >
-            <Marker
-              coordinate={{
-                latitude: animal.latitude,
-                longitude: animal.longitude,
-              }}
-            >
-              <Ionicons 
-                name={animal.animal_type === 'dog' ? 'paw' : 'paw-outline'} 
-                size={24} 
-                color={animal.animal_type === 'dog' ? '#8B4513' : '#2E7D32'} 
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Animal Image */}
+        <View style={styles.imageContainer}>
+          <Image
+            source={{ uri: animal.image_url }}
+            style={styles.animalImage}
+            resizeMode="cover"
+          />
+          <View style={styles.imageOverlay}>
+            <View style={styles.animalTypeTag}>
+              <Ionicons
+                name="logo-octocat"
+                size={16}
+                color="#fff"
               />
-            </Marker>
-          </MapView>
-        </View>
-        
-        {isOwner && (
-          <View style={styles.ownerActionsContainer}>
-            <TouchableOpacity
-              style={[styles.deleteButton, isDeleting && styles.disabledButton]}
-              onPress={handleDelete}
-              disabled={isDeleting}
-            >
-              <Ionicons name="trash" size={24} color="white" />
-              <Text style={styles.deleteButtonText}>
-                {isDeleting ? 'Deleting...' : 'Delete This Sighting'}
+              <Text style={styles.animalTypeText}>
+                Cat
               </Text>
-            </TouchableOpacity>
+            </View>
           </View>
-        )}
-      </View>
-      
-      <Modal
-        visible={isEditModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setIsEditModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Description</Text>
-            
-            <TextInput
-              style={styles.modalInput}
-              value={editDescription}
-              onChangeText={setEditDescription}
-              multiline
-              placeholder="Enter description"
-              placeholderTextColor="#999"
-            />
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => setIsEditModalVisible(false)}
+        </View>
+
+        {/* Animal Details */}
+        <View style={styles.detailsContainer}>
+          {/* Time and Distance */}
+          <View style={styles.metaInfo}>
+            <View style={styles.metaItem}>
+              <Ionicons name="time-outline" size={18} color={THEME.secondary} />
+              <Text style={styles.metaText}>
+                {formatDate(animal.spotted_at)}
+              </Text>
+            </View>
+            {distance && (
+              <View style={styles.metaItem}>
+                <Ionicons name="location-outline" size={18} color={THEME.secondary} />
+                <Text style={styles.metaText}>{distance}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Description */}
+          <View style={styles.descriptionContainer}>
+            <View style={styles.descriptionHeader}>
+              <Text style={styles.descriptionTitle}>Description</Text>
+            </View>
+            <Text style={styles.descriptionText}>
+              {animal.description || 'No description provided.'}
+            </Text>
+          </View>
+
+          {/* Location Map */}
+          <View style={styles.mapSection}>
+            <Text style={styles.sectionTitle}>Location</Text>
+            <View style={styles.mapContainer}>
+              <MapView
+                ref={mapRef}
+                style={styles.map}
+                initialRegion={{
+                  latitude: animal.latitude,
+                  longitude: animal.longitude,
+                  latitudeDelta: 0.01,
+                  longitudeDelta: 0.01,
+                }}
+                scrollEnabled={false}
+                zoomEnabled={false}
+                rotateEnabled={false}
               >
-                <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                <Marker
+                  coordinate={{
+                    latitude: animal.latitude,
+                    longitude: animal.longitude,
+                  }}
+                />
+              </MapView>
+              <TouchableOpacity 
+                style={styles.viewOnMapButton}
+                onPress={handleViewOnMap}
+              >
+                <Ionicons name="map" size={18} color="#fff" />
+                <Text style={styles.viewOnMapText}>View on Full Map</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Owner actions */}
+          {isOwner && (
+            <View style={styles.ownerActionsContainer}>
+              <TouchableOpacity
+                style={styles.editDescriptionButton}
+                onPress={handleEditDescription}
+              >
+                <Ionicons name="create-outline" size={20} color="#fff" />
+                <Text style={styles.editButtonText}>Edit Description</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={styles.modalSaveButton}
-                onPress={handleEditDescription}
+                style={styles.deleteButton}
+                onPress={handleDelete}
               >
-                <Text style={styles.modalSaveButtonText}>Save</Text>
+                <Ionicons name="trash-outline" size={20} color="#fff" />
+                <Text style={styles.deleteButtonText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Edit Description Modal */}
+      <Modal
+        visible={editModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Description</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editedDescription}
+              onChangeText={setEditedDescription}
+              multiline
+              placeholder="Describe the animal..."
+              textAlignVertical="top"
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setEditModalVisible(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalSaveButton}
+                onPress={handleSaveDescription}
+                disabled={savingDescription}
+              >
+                {savingDescription ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalSaveText}>Save</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
+  },
+  scrollContent: {
+    flexGrow: 1,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#fff',
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 16,
     fontSize: 16,
+    color: '#666',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#fff',
     padding: 20,
   },
   errorText: {
     fontSize: 18,
-    marginTop: 10,
-    marginBottom: 20,
+    color: '#666',
+    marginTop: 16,
+    marginBottom: 24,
   },
-  backButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 5,
-  },
-  backButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  image: {
+  imageContainer: {
     width: '100%',
     height: 300,
+    position: 'relative',
   },
-  infoContainer: {
-    padding: 15,
+  animalImage: {
+    width: '100%',
+    height: '100%',
   },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginRight: 10,
-  },
-  date: {
-    fontSize: 16,
-    color: '#666',
-  },
-  detailsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  detailText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  directionsButton: {
-    backgroundColor: '#4CAF50',
-    padding: 10,
-    borderRadius: 5,
-    marginLeft: 10,
-  },
-  directionsButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  descriptionContainer: {
-    marginBottom: 15,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  descriptionText: {
-    fontSize: 16,
-    color: '#444',
-  },
-  editButton: {
-    backgroundColor: '#4CAF50',
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 10,
-  },
-  editButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  mapContainer: {
-    borderRadius: 10,
-    overflow: 'hidden',
-    marginBottom: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  map: {
-    height: 200,
-  },
-  ownerActionsContainer: {
-    marginTop: 20,
-    marginBottom: 10,
-    padding: 15,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  deleteButton: {
-    backgroundColor: '#F44336',
-    padding: 15,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 15,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
-  },
-  deleteButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
-  disabledButton: {
-    backgroundColor: '#ccc',
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-    width: '90%',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  modalInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 5,
-    padding: 10,
-    marginBottom: 20,
-    backgroundColor: '#f9f9f9',
-    minHeight: 100,
-    textAlignVertical: 'top',
-  },
-  modalButtons: {
+  imageOverlay: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  modalCancelButton: {
-    backgroundColor: '#f5f5f5',
-    padding: 10,
-    borderRadius: 5,
+  animalTypeTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(46, 125, 50, 0.8)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
   },
-  modalCancelButtonText: {
+  animalTypeText: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  detailsContainer: {
+    padding: 16,
+  },
+  metaInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  metaText: {
+    marginLeft: 6,
+    color: '#666',
+    fontSize: 14,
+  },
+  descriptionContainer: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  descriptionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  descriptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#333',
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editButtonText: {
+    color: '#fff',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  descriptionText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: '#333',
+  },
+  mapSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  mapContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#f5f5f5',
+  },
+  map: {
+    width: '100%',
+    height: 200,
+  },
+  viewOnMapButton: {
+    backgroundColor: '#2E7D32',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+  },
+  viewOnMapText: {
+    color: '#fff',
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  deleteButton: {
+    backgroundColor: '#D32F2F',
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    marginTop: 8,
+  },
+  deleteButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  backButton: {
+    padding: 8,
+  },
+  backButtonText: {
+    color: '#2E7D32',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    width: '100%',
+    maxWidth: 500,
+  },
+  modalTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 16,
+    color: '#333',
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    minHeight: 120,
+    fontSize: 16,
+    backgroundColor: '#f5f5f5',
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  modalCancelButton: {
+    padding: 12,
+    marginRight: 12,
+  },
+  modalCancelText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '500',
   },
   modalSaveButton: {
-    backgroundColor: '#4CAF50',
-    padding: 10,
-    borderRadius: 5,
+    backgroundColor: '#2E7D32',
+    borderRadius: 8,
+    padding: 12,
+    paddingHorizontal: 24,
   },
-  modalSaveButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+  modalSaveText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  ownerActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  editDescriptionButton: {
+    backgroundColor: '#2E7D32',
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    marginTop: 8,
+    flex: 1,
+    marginRight: 8,
   },
 });
 

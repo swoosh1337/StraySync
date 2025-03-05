@@ -14,6 +14,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   LayoutChangeEvent,
+  SafeAreaView,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,7 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
 import { catService, supabase } from '../services/supabase';
-import { locationService } from '../services/location';
+import { locationService } from '../services/location/locationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type AddCatScreenNavigationProp = NativeStackNavigationProp<
@@ -38,6 +39,7 @@ const AddCatScreen: React.FC = () => {
   const scrollViewRef = useRef<ScrollView>(null);
   const descriptionInputRef = useRef<TextInput>(null);
   
+  const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [location, setLocation] = useState({
@@ -49,6 +51,15 @@ const AddCatScreen: React.FC = () => {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [inputY, setInputY] = useState(0);
   const [animalType, setAnimalType] = useState<'cat' | 'dog'>('cat');
+  const [locationName, setLocationName] = useState('Current Location');
+
+  // Theme colors
+  const THEME = {
+    primary: '#D0F0C0',
+    secondary: '#2E7D32',
+    accent: '#388E3C',
+    inactive: '#90A4AE',
+  };
 
   // Get the current user ID and location
   useEffect(() => {
@@ -96,102 +107,15 @@ const AddCatScreen: React.FC = () => {
     };
     
     initialize();
-  }, []);
 
-  // Request permission to access the camera roll
-  useEffect(() => {
-    (async () => {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Sorry, we need camera roll permissions to upload images!'
-        );
-      }
-    })();
-  }, []);
-
-  // Pick an image from the camera roll
-  const pickImage = async () => {
-    try {
-      console.log('Launching image picker...');
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.5, // Lower quality to reduce file size
-        exif: false, // Don't include EXIF data to reduce size
-      });
-
-      console.log('Image picker result:', result.canceled ? 'Canceled' : 'Image selected');
-      
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        console.log('Selected image size:', result.assets[0].fileSize || 'unknown');
-        setImageUri(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again or use the camera instead.');
-    }
-  };
-
-  // Take a photo with the camera
-  const takePhoto = async () => {
-    try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Sorry, we need camera permissions to take photos!'
-        );
-        return;
-      }
-      
-      console.log('Launching camera...');
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.5, // Lower quality to reduce file size
-        exif: false, // Don't include EXIF data to reduce size
-      });
-
-      console.log('Camera result:', result.canceled ? 'Canceled' : 'Photo taken');
-      
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        console.log('Captured image size:', result.assets[0].fileSize || 'unknown');
-        setImageUri(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Error taking photo:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again or select from gallery instead.');
-    }
-  };
-
-  // Update the marker location when the user drags it
-  const handleMarkerDrag = (e: any) => {
-    console.log('Marker dragged:', e.nativeEvent.coordinate);
-    setLocation({
-      latitude: e.nativeEvent.coordinate.latitude,
-      longitude: e.nativeEvent.coordinate.longitude,
-    });
-  };
-
-  // Add keyboard listeners
-  useEffect(() => {
+    // Set up keyboard listeners
     const keyboardDidShowListener = Keyboard.addListener(
       'keyboardDidShow',
-      () => {
-        setKeyboardVisible(true);
-        // We'll handle scrolling in the onFocus event of the TextInput
-      }
+      () => setKeyboardVisible(true)
     );
-    
     const keyboardDidHideListener = Keyboard.addListener(
       'keyboardDidHide',
-      () => {
-        setKeyboardVisible(false);
-      }
+      () => setKeyboardVisible(false)
     );
 
     return () => {
@@ -199,6 +123,50 @@ const AddCatScreen: React.FC = () => {
       keyboardDidHideListener.remove();
     };
   }, []);
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Please allow access to your photo library to select an image.');
+      return;
+    }
+    
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Please allow access to your camera to take a photo.');
+      return;
+    }
+    
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
+    
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setImageUri(result.assets[0].uri);
+    }
+  };
+
+  const handleMarkerDrag = (e: any) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+    setLocation({ latitude, longitude });
+  };
 
   // Function to measure the position of the description input
   const measureInputPosition = (event: LayoutChangeEvent) => {
@@ -222,7 +190,7 @@ const AddCatScreen: React.FC = () => {
   // Add this to the JSX where appropriate
   const renderAnimalTypeSelector = () => {
     return (
-      <View style={styles.animalTypeContainer}>
+      <View style={styles.formSection}>
         <Text style={styles.sectionTitle}>Animal Type</Text>
         <View style={styles.animalTypeButtons}>
           <TouchableOpacity
@@ -233,9 +201,9 @@ const AddCatScreen: React.FC = () => {
             onPress={() => setAnimalType('cat')}
           >
             <Ionicons
-              name="paw"
-              size={24}
-              color={animalType === 'cat' ? 'white' : '#333'}
+              name="logo-octocat"
+              size={20}
+              color={animalType === 'cat' ? THEME.secondary : '#757575'}
             />
             <Text
               style={[
@@ -255,8 +223,8 @@ const AddCatScreen: React.FC = () => {
           >
             <Ionicons
               name="paw"
-              size={24}
-              color={animalType === 'dog' ? 'white' : '#333'}
+              size={20}
+              color={animalType === 'dog' ? THEME.secondary : '#757575'}
             />
             <Text
               style={[
@@ -298,55 +266,45 @@ const AddCatScreen: React.FC = () => {
         console.log('Image uploaded successfully, URL:', imageUrl);
       } catch (uploadError) {
         console.error('Error uploading image:', uploadError);
-        Alert.alert('Error', 'Failed to upload image. Please try again.');
+        Alert.alert('Upload Error', 'Failed to upload image. Please try again.');
         setLoading(false);
         return;
       }
       
       if (!imageUrl) {
-        console.error('Failed to get URL for uploaded image');
-        Alert.alert('Error', 'Failed to process image. Please try again.');
+        console.error('No image URL returned from upload');
+        Alert.alert('Upload Error', 'Failed to get image URL. Please try again.');
         setLoading(false);
         return;
       }
       
-      // Prepare the animal data
-      const animalData = {
+      // Prepare the cat data
+      const catData = {
         user_id: currentUserId,
         latitude: location.latitude,
         longitude: location.longitude,
         image_url: imageUrl,
-        description: description || `A stray ${animalType} spotted at this location`,
+        description: description || name || `A stray ${animalType} spotted at this location`,
         spotted_at: new Date().toISOString(),
         animal_type: animalType,
       };
       
-      console.log('Animal data prepared:', JSON.stringify(animalData, null, 2));
+      console.log('Animal data prepared:', JSON.stringify(catData, null, 2));
       
-      // Add the animal to the database
-      console.log(`Attempting to add ${animalType} to database`);
-      let newCat = null;
-      
-      try {
-        newCat = await catService.addCat(animalData);
-        console.log('Database response:', newCat ? 'Success' : 'Failed');
-      } catch (dbError) {
-        console.error('Error adding animal to database:', dbError);
-        Alert.alert('Error', 'Failed to save animal data. Please try again.');
-        setLoading(false);
-        return;
-      }
+      // Add the cat to the database
+      console.log('Attempting to add cat to database');
+      const newCat = await catService.addCat(catData);
       
       if (newCat) {
         console.log('Successfully added animal:', newCat.id);
         Alert.alert(
-          'Success', 
-          `${animalType === 'cat' ? 'Cat' : 'Dog'} sighting added successfully!`,
+          'Success',
+          `Thank you for reporting this ${animalType} sighting!`,
           [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
       } else {
-        console.error('Failed to add animal to database (null response)');
-        Alert.alert('Error', 'Failed to save animal data. Please try again.');
+        console.error('Failed to add animal to database');
+        Alert.alert('Error', 'Failed to save animal sighting. Please try again.');
       }
     } catch (error) {
       console.error('Unhandled error in handleSubmit:', error);
@@ -368,106 +326,135 @@ const AddCatScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
       >
-        <ScrollView 
-          ref={scrollViewRef}
-          style={styles.container}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          keyboardShouldPersistTaps="handled"
-        >
-          <View style={styles.mapContainer}>
-            <MapView
-              style={styles.map}
-              provider={undefined}
-              initialRegion={{
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.005,
-                longitudeDelta: 0.005,
-              }}
-            >
-              <Marker
-                coordinate={location}
-                draggable
-                onDragEnd={handleMarkerDrag}
+        <SafeAreaView style={styles.container}>
+          <ScrollView 
+            ref={scrollViewRef}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.header}>
+              <Text style={styles.headerTitle}>Add New {animalType === 'cat' ? 'Cat' : 'Dog'} Sighting</Text>
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => navigation.goBack()}
               >
-                <Ionicons name="paw" size={30} color="#FF5722" />
-              </Marker>
-            </MapView>
-            <Text style={styles.mapInstructions}>
-              Drag the marker to the exact location where you spotted the {animalType}
-            </Text>
-          </View>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
 
-          <View style={styles.imageSection}>
-            <Text style={styles.sectionTitle}>Add a Photo</Text>
-            {imageUri ? (
-              <View style={styles.imagePreviewContainer}>
-                <Image source={{ uri: imageUri }} style={styles.imagePreview} />
-                <TouchableOpacity
-                  style={styles.changeImageButton}
-                  onPress={pickImage}
-                >
-                  <Text style={styles.changeImageText}>Change Photo</Text>
-                </TouchableOpacity>
+            {/* Photo Section */}
+            <View style={styles.photoContainer}>
+              {imageUri ? (
+                <View style={styles.photoPreviewContainer}>
+                  <Image source={{ uri: imageUri }} style={styles.photoPreview} />
+                  <TouchableOpacity 
+                    style={styles.changePhotoButton}
+                    onPress={() => setImageUri(null)}
+                  >
+                    <Ionicons name="refresh" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.photoPlaceholder}>
+                  <View style={styles.photoButtonsContainer}>
+                    <TouchableOpacity 
+                      style={styles.cameraButton}
+                      onPress={takePhoto}
+                    >
+                      <Ionicons name="camera" size={28} color="#fff" />
+                      <Text style={styles.buttonText}>Camera</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.galleryButton}
+                      onPress={pickImage}
+                    >
+                      <Ionicons name="images" size={28} color="#fff" />
+                      <Text style={styles.buttonText}>Gallery</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.photoPlaceholderText}>Take a photo or choose from gallery</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Form Sections */}
+            <View style={styles.formSection}>
+              <Text style={styles.sectionTitle}>Cat Name/Description</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="E.g., Orange Tabby, Gray Kitten, etc."
+                value={name}
+                onChangeText={setName}
+              />
+            </View>
+
+            <View style={styles.formSection} onLayout={measureInputPosition}>
+              <Text style={styles.sectionTitle}>Detailed Description</Text>
+              <TextInput
+                ref={descriptionInputRef}
+                style={styles.textArea}
+                placeholder="Describe the cat's appearance, behavior, condition, etc."
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                onFocus={handleDescriptionFocus}
+              />
+            </View>
+
+            {renderAnimalTypeSelector()}
+
+            <View style={styles.formSection}>
+              <Text style={styles.sectionTitle}>Location</Text>
+              <View style={styles.locationContainer}>
+                <Ionicons name="location" size={20} color={THEME.secondary} style={styles.locationIcon} />
+                <Text style={styles.locationText}>
+                  {locationName}
+                </Text>
+                <Text style={styles.locationCoords}>
+                  {location.latitude.toFixed(5)}° N, {location.longitude.toFixed(5)}° W
+                </Text>
               </View>
-            ) : (
-              <View style={styles.imageButtonsContainer}>
-                <TouchableOpacity
-                  style={styles.imageButton}
-                  onPress={takePhoto}
+              
+              {/* Map with draggable marker */}
+              <View style={styles.mapContainer}>
+                <MapView
+                  style={styles.map}
+                  initialRegion={{
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01,
+                  }}
                 >
-                  <Ionicons name="camera" size={24} color="white" />
-                  <Text style={styles.imageButtonText}>Take Photo</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.imageButton}
-                  onPress={pickImage}
-                >
-                  <Ionicons name="images" size={24} color="white" />
-                  <Text style={styles.imageButtonText}>Choose from Gallery</Text>
-                </TouchableOpacity>
+                  <Marker
+                    coordinate={location}
+                    draggable
+                    onDragEnd={handleMarkerDrag}
+                  />
+                </MapView>
+                <Text style={styles.dragPinText}>Drag the pin to adjust location</Text>
               </View>
-            )}
-          </View>
+            </View>
 
-          <View 
-            style={styles.formSection}
-            onLayout={measureInputPosition}
-          >
-            <Text style={styles.sectionTitle}>Description (Optional)</Text>
-            <TextInput
-              ref={descriptionInputRef}
-              style={styles.input}
-              placeholder="Add any details about the cat (color, size, behavior, etc.)"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-              onFocus={handleDescriptionFocus}
-            />
-          </View>
-
-          {renderAnimalTypeSelector()}
-
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              keyboardVisible && { marginBottom: 120 } // Reduced extra margin when keyboard is visible
-            ]}
-            onPress={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <>
-                <Ionicons name="paw" size={24} color="white" />
-                <Text style={styles.submitButtonText}>Add {animalType === 'cat' ? 'Cat' : 'Dog'} Sighting</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </ScrollView>
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                loading && styles.disabledButton
+              ]}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.submitButtonText}>Submit</Text>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </SafeAreaView>
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
   );
@@ -476,141 +463,120 @@ const AddCatScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff',
   },
-  mapContainer: {
-    margin: 15,
-    borderRadius: 10,
-    overflow: 'hidden',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 40,
   },
-  map: {
-    height: 200,
-  },
-  mapInstructions: {
-    backgroundColor: 'white',
-    padding: 10,
-    fontSize: 14,
-    color: '#666',
-  },
-  imageSection: {
-    margin: 15,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#333',
-  },
-  imageButtonsContainer: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  imageButton: {
-    backgroundColor: '#4CAF50',
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  photoContainer: {
+    width: '100%',
+    height: 240,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 24,
+    backgroundColor: '#f0f0f0',
+  },
+  photoPreviewContainer: {
+    position: 'relative',
+  },
+  photoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  changePhotoButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    padding: 4,
+    borderRadius: 12,
+    backgroundColor: '#2E7D32',
+  },
+  photoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+  },
+  photoButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 16,
+  },
+  cameraButton: {
+    width: 120,
     padding: 12,
     borderRadius: 8,
-    alignItems: 'center',
-    flex: 0.48,
-    flexDirection: 'row',
+    backgroundColor: '#D0F0C0',
     justifyContent: 'center',
-  },
-  imageButtonText: {
-    color: 'white',
-    marginLeft: 8,
-    fontWeight: '500',
-  },
-  imagePreviewContainer: {
     alignItems: 'center',
+    marginHorizontal: 10,
   },
-  imagePreview: {
-    width: '100%',
-    height: 200,
+  galleryButton: {
+    width: 120,
+    padding: 12,
     borderRadius: 8,
-    marginBottom: 10,
+    backgroundColor: '#D0F0C0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 10,
   },
-  changeImageButton: {
-    backgroundColor: '#FF5722',
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 5,
+  buttonText: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
   },
-  changeImageText: {
-    color: 'white',
-    fontWeight: '500',
+  photoPlaceholderText: {
+    color: '#666',
+    fontSize: 16,
   },
   formSection: {
-    margin: 15,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    marginBottom: 30,
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 5,
-    padding: 15,
-    minHeight: 150,
-    textAlignVertical: 'top',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 12,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
-    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
-  submitButton: {
-    backgroundColor: '#4CAF50',
-    margin: 15,
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    marginBottom: 80,
-  },
-  submitButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginLeft: 10,
-  },
-  animalTypeContainer: {
-    margin: 15,
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    marginBottom: 20,
+  textArea: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 100,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   animalTypeButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 10,
     paddingHorizontal: 10,
   },
   animalTypeButton: {
@@ -619,23 +585,81 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 12,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ccc',
+    backgroundColor: '#f5f5f5',
     width: '48%',
     height: 50,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   activeAnimalTypeButton: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
+    backgroundColor: '#D0F0C0',
+    borderColor: '#2E7D32',
   },
   animalTypeText: {
-    marginLeft: 8,
     fontSize: 16,
-    fontWeight: '500',
+    marginLeft: 8,
+    color: '#757575',
     textAlign: 'center',
   },
   activeAnimalTypeText: {
+    color: '#2E7D32',
+    fontWeight: '600',
+  },
+  locationContainer: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  locationIcon: {
+    position: 'absolute',
+    left: 12,
+    top: 12,
+  },
+  locationText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 28,
+    color: '#333',
+  },
+  locationCoords: {
+    fontSize: 14,
+    color: '#757575',
+    marginTop: 4,
+    marginLeft: 28,
+  },
+  mapContainer: {
+    height: 200,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  map: {
+    flex: 1,
+  },
+  dragPinText: {
+    color: '#757575',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  submitButton: {
+    backgroundColor: '#2E7D32',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
+  submitButtonText: {
     color: 'white',
+    fontSize: 18,
+    fontWeight: '600',
   },
 });
 

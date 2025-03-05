@@ -132,28 +132,8 @@ const SettingsScreen: React.FC = () => {
   };
 
   const handleContactPress = () => {
-    // Options for contacting
+    // Options for contacting - removing email, keeping only website
     const contactOptions = [
-      { 
-        name: 'Email', 
-        action: () => {
-          const email = 'tazigrigolia@gmail.com';
-          const subject = 'StraySync App Feedback';
-          const body = 'Hello StraySync team,\n\n';
-          
-          let url = '';
-          if (Platform.OS === 'ios') {
-            url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-          } else {
-            url = `mailto:${email}?subject=${subject}&body=${body}`;
-          }
-          
-          Linking.openURL(url)
-            .catch(err => {
-              Alert.alert('Error', 'Could not open email client. Please send an email to support@straysync.com');
-            });
-        }
-      },
       {
         name: 'Website',
         action: () => Linking.openURL('https://straysync.com/')
@@ -165,8 +145,8 @@ const SettingsScreen: React.FC = () => {
     
     // Show an alert with options
     Alert.alert(
-      'Contact Us',
-      'How would you like to reach us?',
+      'Visit Our Website',
+      'Would you like to visit our website?',
       [
         ...contactOptions.map(option => ({
           text: option.name,
@@ -303,8 +283,8 @@ const SettingsScreen: React.FC = () => {
             style={[styles.aboutButton, { backgroundColor: '#388E3C' }]} 
             onPress={handleContactPress}
           >
-            <Ionicons name="mail" size={20} color="white" />
-            <Text style={styles.aboutButtonText}>Contact Us</Text>
+            <Ionicons name="globe" size={20} color="white" />
+            <Text style={styles.aboutButtonText}>Visit Website</Text>
           </TouchableOpacity>
         </View>
       </View>

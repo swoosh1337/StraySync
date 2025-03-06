@@ -1,6 +1,6 @@
 # StraySync
 
-A React Native mobile app that helps users locate and track stray animalsin their area. Users can pin the exact location where they spot a stray dog or cat by uploading a photo and marking it on the map. When another user taps the pin, they'll see the cat's photo and get directions to that location.
+A React Native mobile app that helps users locate and track stray animals in their area. Users can pin the exact location where they spot a stray dog or cat by uploading a photo and marking it on the map. When another user taps the pin, they'll see the cat's photo and get directions to that location.
 
 ## Features
 

@@ -8,9 +8,10 @@ import {
   Alert,
   Platform,
   StatusBar,
+  Image,
 } from 'react-native';
 import MapView, { Marker, Callout, Region } from 'react-native-maps';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Location from 'expo-location';
@@ -35,6 +36,8 @@ const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
   const navigation = useNavigation<MapScreenNavigationProp>();
   const mapRef = useRef<MapView>(null);
   const [cats, setCats] = useState<Cat[]>([]);
+  const [filteredCats, setFilteredCats] = useState<Cat[]>([]);
+  const [animalFilter, setAnimalFilter] = useState<'all' | 'cats' | 'dogs'>('all');
   const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState<Region>({
     latitude: 42.2746,
@@ -66,12 +69,30 @@ const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
       setLoading(true);
       const catsData = await catService.getCats();
       setCats(catsData);
+      applyFilter(catsData, animalFilter);
     } catch (error) {
       console.error('Error fetching cats:', error);
       Alert.alert('Error', 'Failed to load animals data');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Apply filter to cats
+  const applyFilter = (catsData: Cat[], filter: 'all' | 'cats' | 'dogs') => {
+    if (filter === 'all') {
+      setFilteredCats(catsData);
+    } else if (filter === 'cats') {
+      setFilteredCats(catsData.filter(cat => cat.animal_type !== 'dog'));
+    } else if (filter === 'dogs') {
+      setFilteredCats(catsData.filter(cat => cat.animal_type === 'dog'));
+    }
+  };
+
+  // Handle filter change
+  const handleFilterChange = (filter: 'all' | 'cats' | 'dogs') => {
+    setAnimalFilter(filter);
+    applyFilter(cats, filter);
   };
 
   // Get user's current location
@@ -154,6 +175,58 @@ const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
         </View>
       ) : (
         <>
+          {/* Filter buttons */}
+          <View style={styles.filterContainer}>
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                animalFilter === 'all' && styles.filterButtonActive,
+              ]}
+              onPress={() => handleFilterChange('all')}
+            >
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  animalFilter === 'all' && styles.filterButtonTextActive,
+                ]}
+              >
+                All
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                animalFilter === 'cats' && styles.filterButtonActive,
+              ]}
+              onPress={() => handleFilterChange('cats')}
+            >
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  animalFilter === 'cats' && styles.filterButtonTextActive,
+                ]}
+              >
+                Cats
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                animalFilter === 'dogs' && styles.filterButtonActive,
+              ]}
+              onPress={() => handleFilterChange('dogs')}
+            >
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  animalFilter === 'dogs' && styles.filterButtonTextActive,
+                ]}
+              >
+                Dogs
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <MapView
             ref={mapRef}
             style={styles.map}
@@ -164,21 +237,34 @@ const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
             rotateEnabled={true}
             onRegionChangeComplete={setRegion}
           >
-            {cats.map((cat) => (
+            {filteredCats.map((cat) => (
               <Marker
                 key={cat.id}
                 coordinate={{
                   latitude: cat.latitude,
                   longitude: cat.longitude,
                 }}
-                pinColor={cat.animal_type === 'dog' ? THEME.dogColor : THEME.secondary}
                 onPress={() => handleCatPress(cat.id)}
               >
+                <View style={styles.markerContainer}>
+                  <MaterialCommunityIcons 
+                    name="paw" 
+                    size={30} 
+                    color={cat.animal_type === 'dog' ? THEME.dogColor : THEME.secondary} 
+                  />
+                </View>
                 <Callout onPress={() => handleCatPress(cat.id)}>
                   <View style={styles.calloutContainer}>
                     <Text style={styles.calloutTitle}>
                       {cat.name || (cat.animal_type === 'dog' ? 'Dog' : 'Cat')}
                     </Text>
+                    {cat.image_url ? (
+                      <Image 
+                        source={{ uri: cat.image_url }} 
+                        style={styles.calloutImage} 
+                        resizeMode="cover"
+                      />
+                    ) : null}
                     <Text style={styles.calloutDescription} numberOfLines={2}>
                       {cat.description || 'No description'}
                     </Text>
@@ -252,9 +338,27 @@ const styles = StyleSheet.create({
   addButton: {
     backgroundColor: '#2E7D32',
   },
+  markerContainer: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 6,
+    borderWidth: 2,
+    borderColor: '#ccc',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+  },
   calloutContainer: {
+    width: 180,
+    padding: 10,
+  },
+  calloutImage: {
     width: 160,
-    padding: 8,
+    height: 120,
+    borderRadius: 8,
+    marginVertical: 6,
   },
   calloutTitle: {
     fontSize: 14,
@@ -271,6 +375,42 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#2E7D32',
     fontStyle: 'italic',
+  },
+  filterContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20,
+    left: 20,
+    right: 20,
+    zIndex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  filterButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    marginHorizontal: 5,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  filterButtonActive: {
+    backgroundColor: '#2E7D32',
+    borderColor: '#2E7D32',
+  },
+  filterButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#757575',
+  },
+  filterButtonTextActive: {
+    color: 'white',
   },
 });
 

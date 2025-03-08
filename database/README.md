@@ -1,6 +1,6 @@
 # Database Directory
 
-This directory contains all database-related files and scripts for the Stray Cat Finder application.
+This directory contains all database-related files and scripts for the stray animal Finder application.
 
 ## Directory Structure
 

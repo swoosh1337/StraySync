@@ -61,14 +61,14 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
           },
         ]}
       >
-        {/* New stray cat icon */}
+        {/* New stray animal icon */}
         <Image 
           source={require('../../assets/stary-icon-removebg-preview.png')} 
           style={styles.catIcon} 
           resizeMode="contain"
         />
-        <Text style={styles.title}>Stray Cat Finder</Text>
-        <Text style={styles.subtitle}>Help find stray cats in your area</Text>
+        <Text style={styles.title}>stray animal Finder</Text>
+        <Text style={styles.subtitle}>Help find stray animals in your area</Text>
       </Animated.View>
     </View>
   );

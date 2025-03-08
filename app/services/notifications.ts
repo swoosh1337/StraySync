@@ -201,10 +201,10 @@ export const notificationService = {
           body = `${cats.length} cat${cats.length !== 1 ? 's' : ''} and ${dogs.length} dog${dogs.length !== 1 ? 's' : ''} were spotted near you recently.`;
         } else if (cats.length > 0) {
           // Only cats
-          title = cats.length === 1 ? 'Stray Cat Nearby!' : `${cats.length} Stray Cats Nearby!`;
+          title = cats.length === 1 ? 'stray animal Nearby!' : `${cats.length} stray animals Nearby!`;
           body = cats.length === 1
-            ? `A stray cat was spotted ${this.getTimeAgo(cats[0].spotted_at)} near you.`
-            : `${cats.length} stray cats were spotted near you recently.`;
+            ? `A stray animal was spotted ${this.getTimeAgo(cats[0].spotted_at)} near you.`
+            : `${cats.length} stray animals were spotted near you recently.`;
         } else {
           // Only dogs
           title = dogs.length === 1 ? 'Stray Dog Nearby!' : `${dogs.length} Stray Dogs Nearby!`;

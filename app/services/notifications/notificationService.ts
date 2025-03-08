@@ -270,12 +270,12 @@ export const notificationService = {
         const cat = newCats[0];
         const timeAgo = this.getTimeAgo(cat.created_at);
         await this.sendNotification(
-          'Stray Cat Nearby',
+          'stray animal Nearby',
           `A cat was spotted ${timeAgo} near your location. Tap to view details.`
         );
       } else {
         await this.sendNotification(
-          'Stray Cats Nearby',
+          'stray animals Nearby',
           `${newCats.length} cats were spotted near your location. Tap to view details.`
         );
       }

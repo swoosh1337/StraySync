@@ -5,8 +5,8 @@ A React Native mobile app that helps users locate and track stray animals in the
 ## Features
 
 - **Interactive Map**: View stray animal sightings on a Google Maps-like interface
-- **Add Cat Sightings**: Upload photos and mark the exact location of stray cats
-- **Animal Details**: View photos, descriptions, and directions to stray cats
+- **Add Cat Sightings**: Upload photos and mark the exact location of stray animals
+- **Animal Details**: View photos, descriptions, and directions to stray animals
 - **Proximity Notifications**: Get alerts when you're near a stray animal location
 - **Customizable Settings**: Set notification radius and time frame preferences
 
@@ -93,7 +93,7 @@ A React Native mobile app that helps users locate and track stray animals in the
 
 ## Usage
 
-1. **Map Screen**: View stray cat sightings on the map
+1. **Map Screen**: View stray animal sightings on the map
 2. **Add Cat**: Tap the "+" button to add a new cat sighting
 3. **Cat Details**: Tap on a cat marker to view details and get directions
 4. **Settings**: Customize notification preferences and app settings

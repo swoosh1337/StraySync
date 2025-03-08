@@ -203,13 +203,13 @@ const CatDetailsScreen: React.FC = () => {
 
   const handleShare = async () => {
     try {
-      const message = `Check out this stray cat I found using the Stray Cat Finder app! ${
+      const message = `Check out this stray animal I found using the stray animal Finder app! ${
         animal?.description || ''
       }`;
       
       await Share.share({
         message,
-        title: `Stray Cat Sighting`,
+        title: `stray animal Sighting`,
       });
     } catch (error) {
       console.error('Error sharing:', error);

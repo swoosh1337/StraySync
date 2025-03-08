@@ -16,7 +16,7 @@ const options = args.slice(2);
 
 // Help text
 const helpText = `
-Database CLI Utility for Stray Cat Finder
+Database CLI Utility for stray animal Finder
 
 Usage:
   node db-cli.js <command> [subcommand] [options]

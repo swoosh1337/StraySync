@@ -15,7 +15,7 @@
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.igrigolia.stray",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -39,7 +39,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow Stray Cat Finder to use your location to find nearby cats."
+          "locationAlwaysAndWhenInUsePermission": "Allow stray animal Finder to use your location to find nearby cats."
         }
       ],
       [

@@ -18,7 +18,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.igrigolia.stray",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIRequiredDeviceCapabilities": ["armv7", "arm64"],
+        "UIDeviceFamily": [1]
       }
     },
     "android": {

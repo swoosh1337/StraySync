@@ -136,7 +136,7 @@ const SettingsScreen: React.FC = () => {
     const contactOptions = [
       {
         name: 'Website',
-        action: () => Linking.openURL('https://straysync.com/')
+        action: () => Linking.openURL('https://stray-sync-landing.vercel.app/')
           .catch(err => {
             Alert.alert('Error', 'Could not open the website. Please try again later.');
           })

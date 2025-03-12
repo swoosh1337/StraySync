@@ -11,11 +11,6 @@ Check out StraySync in action:
     <td><img src="https://raw.githubusercontent.com/swoosh1337/StraySync/main/img2.jpeg" width="250" alt="Add Cat"></td>
     <td><img src="https://raw.githubusercontent.com/swoosh1337/StraySync/main/img3.jpeg" width="250" alt="Cat Details"></td>
   </tr>
-  <tr>
-    <td align="center"><i>Map Screen: Explore stray animal sightings</i></td>
-    <td align="center"><i>Add Cat: Pin a stray animal’s location</i></td>
-    <td align="center"><i>Cat Details: View photos and navigate</i></td>
-  </tr>
 </table>
 
 ## Features

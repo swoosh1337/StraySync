@@ -15,8 +15,17 @@ import Slider from '@react-native-community/slider';
 import { useSettings } from '../contexts/SettingsContext';
 import * as Notifications from 'expo-notifications';
 import * as Location from 'expo-location';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../types';
+
+type SettingsScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Main'
+>;
 
 const SettingsScreen: React.FC = () => {
+  const navigation = useNavigation<SettingsScreenNavigationProp>();
   const {
     notificationRadius,
     setNotificationRadius,

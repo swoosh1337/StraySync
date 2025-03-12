@@ -50,6 +50,7 @@ export type AppSettings = {
 
 // Navigation Types
 export type RootStackParamList = {
+  Onboarding: undefined;
   Main: undefined;
   CatDetails: { catId: string };
   AddCat: { latitude?: number; longitude?: number } | undefined;

@@ -11,16 +11,20 @@
       "resizeMode": "contain",
       "backgroundColor": "#D0F0C0"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.igrigolia.stray",
+      "requireFullScreen": true, // Add this as a top-level iOS key
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "UIRequiredDeviceCapabilities": ["armv7", "arm64"],
-        "UIDeviceFamily": [1]
+        "UIDeviceFamily": [1],
+        "UISupportedInterfaceOrientations~iphone": ["UIInterfaceOrientationPortrait"],
+        "UISupportedInterfaceOrientations": [], // Explicitly empty to override defaults
+        "UISupportedInterfaceOrientations~ipad": [], // Explicitly empty to disable iPad
+        "LSRequiresIPhoneOS": true,
+        "UIRequiresFullScreen": true
       }
     },
     "android": {
@@ -38,19 +42,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow stray animal Finder to use your location to find nearby cats."
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/stary-icon-removebg-preview.png",
-          "color": "#D0F0C0"
-        }
-      ]
+      ["expo-location", {
+        "locationAlwaysAndWhenInUsePermission": "Allow stray animal Finder to use your location to find nearby cats."
+      }],
+      ["expo-notifications", {
+        "icon": "./assets/stary-icon-removebg-preview.png",
+        "color": "#D0F0C0"
+      }]
     ],
     "extra": {
       "eas": {

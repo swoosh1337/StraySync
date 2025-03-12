@@ -55,7 +55,7 @@
     <key>NSCameraUsageDescription</key>
     <string>We need access to your camera so you can take photos of stray animals to upload to the app. These photos help others identify and locate the animals.</string>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>We use your location to show you stray animals nearby and to accurately mark the location when you report a new animal. This helps others find the animals you've spotted.</string>
+    <string>Allow stray animal Finder to use your location to find nearby cats.</string>
     <key>NSLocationAlwaysUsageDescription</key>
     <string>We use your location to notify you when stray animals are reported near you, even when the app is closed. This helps you stay informed about animals in your area.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
@@ -64,20 +64,28 @@
     <string>Allow $(PRODUCT_NAME) to access your microphone</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>We need access to your photo library so you can select and upload existing photos of stray animals. This helps others identify the animals you've spotted.</string>
+    <key>UIDeviceFamily</key>
+    <array>
+      <integer>1</integer>
+    </array>
     <key>UILaunchStoryboardName</key>
     <string>SplashScreen</string>
     <key>UIRequiredDeviceCapabilities</key>
     <array>
+      <string>armv7</string>
       <string>arm64</string>
     </array>
     <key>UIRequiresFullScreen</key>
-    <false/>
+    <true/>
     <key>UIStatusBarStyle</key>
     <string>UIStatusBarStyleDefault</string>
     <key>UISupportedInterfaceOrientations</key>
+    <array/>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array/>
+    <key>UISupportedInterfaceOrientations~iphone</key>
     <array>
       <string>UIInterfaceOrientationPortrait</string>
-      <string>UIInterfaceOrientationPortraitUpsideDown</string>
     </array>
     <key>UIUserInterfaceStyle</key>
     <string>Light</string>

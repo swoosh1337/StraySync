@@ -5,15 +5,18 @@ A React Native mobile app that helps users locate and track stray animals in the
 ## Screenshots
 
 Check out StraySync in action:
-
-![Map Screen - View stray animals on the map](https://raw.githubusercontent.com/swoosh1337/StraySync/main/img3.jpeg)  
-*Map Screen: Explore stray animal sightings on an interactive map.*
-
-![Add Cat - Upload a new sighting](https://raw.githubusercontent.com/swoosh1337/StraySync/main/img2.jpeg)  
-*Add Cat: Pin a stray animal’s location with a photo.*
-
-![Cat Details - See details and get directions](https://raw.githubusercontent.com/swoosh1337/StraySync/main/img3.jpeg)  
-*Cat Details: Tap a pin to view photos and navigate to the location.*
+<table>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/swoosh1337/StraySync/main/img1.jpeg" width="250" alt="Map Screen"></td>
+    <td><img src="https://raw.githubusercontent.com/swoosh1337/StraySync/main/img2.jpeg" width="250" alt="Add Cat"></td>
+    <td><img src="https://raw.githubusercontent.com/swoosh1337/StraySync/main/img3.jpeg" width="250" alt="Cat Details"></td>
+  </tr>
+  <tr>
+    <td align="center"><i>Map Screen: Explore stray animal sightings</i></td>
+    <td align="center"><i>Add Cat: Pin a stray animal’s location</i></td>
+    <td align="center"><i>Cat Details: View photos and navigate</i></td>
+  </tr>
+</table>
 
 ## Features
 

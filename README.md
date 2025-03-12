@@ -2,6 +2,8 @@
 
 A React Native mobile app that helps users locate and track stray animals in their area. Users can pin the exact location where they spot a stray dog or cat by uploading a photo and marking it on the map. When another user taps the pin, they'll see the cat's photo and get directions to that location.
 
+| ![Map Screen](img1.png) | ![Add Cat](img2.png) | ![Cat Details](img3.png) |
+
 ## Features
 
 - **Interactive Map**: View stray animal sightings on a Google Maps-like interface

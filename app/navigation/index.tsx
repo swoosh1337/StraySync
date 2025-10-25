@@ -12,18 +12,25 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CatDetailsScreen from '../screens/CatDetailsScreen';
 import AnimalsListScreen from '../screens/AnimalsListScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
+import SignInScreen from '../screens/SignInScreen';
+import ProfileScreen from '../screens/ProfileScreen';
+import EditAnimalScreen from '../screens/EditAnimalScreen';
+import { useAuth } from '../contexts/AuthContext';
 
 // types for navigation parameters
 export type RootStackParamList = {
   Onboarding: undefined;
   Main: undefined;
+  SignIn: undefined;
   CatDetails: { catId: string };
   AddCat: { latitude?: number; longitude?: number } | undefined;
+  EditAnimal: { animalId: string };
 };
 
 export type MainTabParamList = {
   Map: { forceRefresh?: () => void } | undefined;
   Animals: undefined;
+  Profile: undefined;
   Settings: undefined;
 };
 
@@ -45,20 +52,24 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 // main tab navigator
 const MainTabNavigator = () => {
+  const { user } = useAuth();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: any = 'map';
-          
+
           if (route.name === 'Map') {
             iconName = focused ? 'map' : 'map-outline';
           } else if (route.name === 'Animals') {
             iconName = focused ? 'paw' : 'paw-outline';
+          } else if (route.name === 'Profile') {
+            iconName = focused ? 'person' : 'person-outline';
           } else if (route.name === 'Settings') {
             iconName = focused ? 'settings' : 'settings-outline';
           }
-          
+
           return <Ionicons name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: THEME.secondary,
@@ -79,13 +90,22 @@ const MainTabNavigator = () => {
           title: "Map",
         }}
       />
-      <Tab.Screen 
-        name="Animals" 
+      <Tab.Screen
+        name="Animals"
         component={AnimalsListScreen}
         options={{
           title: "Animals",
         }}
       />
+      {user && (
+        <Tab.Screen
+          name="Profile"
+          component={ProfileScreen}
+          options={{
+            title: "Profile",
+          }}
+        />
+      )}
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
@@ -95,6 +115,7 @@ const MainTabNavigator = () => {
 const RootNavigator = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const { user, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
     // Check if onboarding has been completed for the current version
@@ -102,7 +123,8 @@ const RootNavigator = () => {
       try {
         const completedVersion = await AsyncStorage.getItem('onboardingCompletedVersion');
         // Show onboarding if it's never been completed or if the completed version is older
-        setOnboardingCompleted(completedVersion === ONBOARDING_VERSION);
+        const completed = completedVersion === ONBOARDING_VERSION;
+        setOnboardingCompleted(completed);
       } catch (error) {
         console.error('Error checking onboarding status:', error);
         // Default to not showing onboarding if there's an error
@@ -115,7 +137,18 @@ const RootNavigator = () => {
     checkOnboarding();
   }, []);
 
-  if (isLoading) {
+  // Determine which screen to show
+  const getInitialRoute = (): keyof RootStackParamList => {
+    if (!onboardingCompleted) {
+      return 'Onboarding';
+    }
+    if (!user) {
+      return 'SignIn';
+    }
+    return 'Main';
+  };
+
+  if (isLoading || authLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#D0F0C0' }}>
         <ActivityIndicator size="large" color="#2E7D32" />
@@ -123,22 +156,31 @@ const RootNavigator = () => {
     );
   }
 
+  // Conditionally render screens based on auth state
+  if (!onboardingCompleted) {
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+      </Stack.Navigator>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="SignIn" component={SignInScreen} />
+      </Stack.Navigator>
+    );
+  }
+
   return (
-    <Stack.Navigator initialRouteName={onboardingCompleted ? 'Main' : 'Onboarding'}>
-      <Stack.Screen
-        name="Onboarding"
-        component={OnboardingScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="Main"
-        component={MainTabNavigator}
-        options={{ headerShown: false }}
-      />
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Main" component={MainTabNavigator} />
       <Stack.Screen
         name="CatDetails"
         component={CatDetailsScreen}
-        options={{ 
+        options={{
+          headerShown: true,
           title: "Animal Details",
           headerStyle: {
             backgroundColor: THEME.primary,
@@ -149,8 +191,21 @@ const RootNavigator = () => {
       <Stack.Screen
         name="AddCat"
         component={AddCatScreen}
-        options={{ 
+        options={{
+          headerShown: true,
           title: "Add Animal",
+          headerStyle: {
+            backgroundColor: THEME.primary,
+          },
+          headerTintColor: THEME.secondary,
+        }}
+      />
+      <Stack.Screen
+        name="EditAnimal"
+        component={EditAnimalScreen}
+        options={{
+          headerShown: true,
+          title: "Edit Animal",
           headerStyle: {
             backgroundColor: THEME.primary,
           },

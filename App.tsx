@@ -3,8 +3,10 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './app/navigation';
 import { SettingsProvider } from './app/contexts/SettingsContext';
+import { AuthProvider } from './app/contexts/AuthContext';
 import * as Notifications from 'expo-notifications';
 import { notificationService } from './app/services/notifications';
+import { cleanupService } from './app/services/cleanup';
 import { SplashScreen as CustomSplashScreen } from './app/components';
 import { useLoading } from './app/hooks';
 import * as SplashScreen from 'expo-splash-screen';
@@ -14,6 +16,8 @@ import { View, LogBox } from 'react-native';
 LogBox.ignoreLogs([
   'Animated: `useNativeDriver` was not specified',
   'Non-serializable values were found in the navigation state',
+  'Profile fetch timeout',
+  'Exception in fetchProfile',
 ]);
 
 // Keep the splash screen visible while we fetch resources
@@ -48,6 +52,10 @@ export default function App() {
           // Initialize notification service
           await notificationService.initialize();
           console.log('Notification service initialized successfully');
+          
+          // Check and run cleanup of old animal records
+          await cleanupService.checkAndRunCleanup();
+          console.log('Cleanup check completed');
           
           // Add any other initialization tasks here
           // For example: load fonts, preload assets, etc.
@@ -96,12 +104,14 @@ export default function App() {
   // Main app
   return (
     <SafeAreaProvider>
-      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-        <SettingsProvider>
-          <AppNavigator />
-          <StatusBar style="auto" />
-        </SettingsProvider>
-      </View>
+      <AuthProvider>
+        <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+          <SettingsProvider>
+            <AppNavigator />
+            <StatusBar style="auto" />
+          </SettingsProvider>
+        </View>
+      </AuthProvider>
     </SafeAreaProvider>
   );
 }

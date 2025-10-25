@@ -85,10 +85,10 @@ const OnboardingScreen: React.FC = () => {
     try {
       // Save that onboarding has been completed with the current version
       await AsyncStorage.setItem('onboardingCompletedVersion', ONBOARDING_VERSION);
-      // Navigate to the main app
+      // Navigate to Sign In screen (user must authenticate before accessing main app)
       navigation.reset({
         index: 0,
-        routes: [{ name: 'Main' }],
+        routes: [{ name: 'SignIn' }],
       });
     } catch (error) {
       console.error('Error saving onboarding status:', error);

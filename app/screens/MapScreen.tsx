@@ -18,6 +18,7 @@ import * as Location from 'expo-location';
 import { Cat, RootStackParamList } from '../types';
 import { catService } from '../services/supabase';
 import { locationService } from '../services/location';
+import { useSettings } from '../contexts/SettingsContext';
 
 type MapScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -35,6 +36,7 @@ type MapScreenProps = {
 const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
   const navigation = useNavigation<MapScreenNavigationProp>();
   const mapRef = useRef<MapView>(null);
+  const { searchRadius } = useSettings();
   const [cats, setCats] = useState<Cat[]>([]);
   const [filteredCats, setFilteredCats] = useState<Cat[]>([]);
   const [animalFilter, setAnimalFilter] = useState<'all' | 'cats' | 'dogs'>('all');
@@ -49,6 +51,7 @@ const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
     latitude: number;
     longitude: number;
   } | null>(null);
+  const [nearbyCount, setNearbyCount] = useState(0);
 
   // Theme colors
   const THEME = {
@@ -78,15 +81,32 @@ const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
     }
   };
 
-  // Apply filter to cats
+  // Apply filter to cats (by type and distance)
   const applyFilter = (catsData: Cat[], filter: 'all' | 'cats' | 'dogs') => {
-    if (filter === 'all') {
-      setFilteredCats(catsData);
-    } else if (filter === 'cats') {
-      setFilteredCats(catsData.filter(cat => cat.animal_type !== 'dog'));
+    let filtered = catsData;
+    
+    // Filter by animal type
+    if (filter === 'cats') {
+      filtered = filtered.filter(cat => cat.animal_type !== 'dog');
     } else if (filter === 'dogs') {
-      setFilteredCats(catsData.filter(cat => cat.animal_type === 'dog'));
+      filtered = filtered.filter(cat => cat.animal_type === 'dog');
     }
+    
+    // Filter by distance from user location
+    if (userLocation) {
+      filtered = filtered.filter(cat => {
+        const distance = locationService.calculateDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          cat.latitude,
+          cat.longitude
+        );
+        return distance <= searchRadius;
+      });
+      setNearbyCount(filtered.length);
+    }
+    
+    setFilteredCats(filtered);
   };
 
   // Handle filter change
@@ -94,6 +114,13 @@ const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
     setAnimalFilter(filter);
     applyFilter(cats, filter);
   };
+
+  // Re-apply filters when search radius or user location changes
+  useEffect(() => {
+    if (cats.length > 0) {
+      applyFilter(cats, animalFilter);
+    }
+  }, [searchRadius, userLocation]);
 
   // Get user's current location
   const getUserLocation = async () => {
@@ -226,6 +253,16 @@ const MapScreen: React.FC<MapScreenProps> = ({ route }) => {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Search radius info */}
+          {userLocation && (
+            <View style={styles.radiusInfo}>
+              <Ionicons name="location" size={16} color={THEME.secondary} />
+              <Text style={styles.radiusText}>
+                {nearbyCount} nearby (within {searchRadius}km)
+              </Text>
+            </View>
+          )}
 
           <MapView
             ref={mapRef}
@@ -411,6 +448,31 @@ const styles = StyleSheet.create({
   },
   filterButtonTextActive: {
     color: 'white',
+  },
+  radiusInfo: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 100 : 70,
+    left: 20,
+    right: 20,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+    zIndex: 1,
+  },
+  radiusText: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 6,
+    fontWeight: '500',
   },
 });
 

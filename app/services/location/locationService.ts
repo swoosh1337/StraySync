@@ -162,7 +162,7 @@ export const locationService = {
   async openMapsWithDirections(
     destinationLat: number,
     destinationLng: number,
-    destinationName: string = 'Cat Location'
+    destinationName: string = 'Animal Location'
   ): Promise<boolean> {
     try {
       const currentLocation = await this.getCurrentLocation();
@@ -170,30 +170,36 @@ export const locationService = {
       // Encode the destination name for URLs
       const encodedDestName = encodeURIComponent(destinationName);
       
-      // Try to open Google Maps first (if installed)
-      const googleMapsUrl = Platform.select({
-        ios: `comgooglemaps://?saddr=${currentLocation?.latitude},${currentLocation?.longitude}&daddr=${destinationLat},${destinationLng}&directionsmode=walking&q=${encodedDestName}`,
-        android: `google.navigation:q=${destinationLat},${destinationLng}&mode=w`,
-        default: `https://www.google.com/maps/dir/?api=1&origin=${currentLocation?.latitude},${currentLocation?.longitude}&destination=${destinationLat},${destinationLng}&travelmode=walking&q=${encodedDestName}`,
-      });
-      
-      // Check if Google Maps is installed
-      const canOpenGoogleMaps = await Linking.canOpenURL(googleMapsUrl);
-      
-      if (canOpenGoogleMaps) {
-        console.log('Opening Google Maps...');
-        await Linking.openURL(googleMapsUrl);
+      // On iOS, use Apple Maps directly (no need for URL scheme configuration)
+      if (Platform.OS === 'ios') {
+        const appleMapsUrl = `http://maps.apple.com/?saddr=${currentLocation?.latitude},${currentLocation?.longitude}&daddr=${destinationLat},${destinationLng}&dirflg=w&q=${encodedDestName}`;
+        
+        console.log('Opening Apple Maps...');
+        await Linking.openURL(appleMapsUrl);
         return true;
       }
       
-      // Fallback to Apple Maps on iOS or web URL on other platforms
-      const appleMapsUrl = `http://maps.apple.com/?saddr=${currentLocation?.latitude},${currentLocation?.longitude}&daddr=${destinationLat},${destinationLng}&dirflg=w&q=${encodedDestName}`;
-      const defaultMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${currentLocation?.latitude},${currentLocation?.longitude}&destination=${destinationLat},${destinationLng}&travelmode=walking&q=${encodedDestName}`;
+      // On Android, try Google Maps app first
+      if (Platform.OS === 'android') {
+        try {
+          const googleMapsUrl = `google.navigation:q=${destinationLat},${destinationLng}&mode=w`;
+          const canOpenGoogleMaps = await Linking.canOpenURL(googleMapsUrl);
+          
+          if (canOpenGoogleMaps) {
+            console.log('Opening Google Maps...');
+            await Linking.openURL(googleMapsUrl);
+            return true;
+          }
+        } catch (error) {
+          console.log('Google Maps not available, using web fallback');
+        }
+      }
       
-      const mapsUrl = Platform.OS === 'ios' ? appleMapsUrl : defaultMapsUrl;
+      // Fallback to web URL (works on all platforms)
+      const webMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${currentLocation?.latitude},${currentLocation?.longitude}&destination=${destinationLat},${destinationLng}&travelmode=walking`;
       
-      console.log(`Opening ${Platform.OS === 'ios' ? 'Apple Maps' : 'default maps app'}...`);
-      await Linking.openURL(mapsUrl);
+      console.log('Opening maps in browser...');
+      await Linking.openURL(webMapsUrl);
       return true;
     } catch (error) {
       console.error('Error opening maps:', error);

@@ -10,6 +10,8 @@ type SettingsContextType = {
   setIsNotificationsEnabled: (enabled: boolean) => void;
   isBackgroundTrackingEnabled: boolean;
   setIsBackgroundTrackingEnabled: (enabled: boolean) => void;
+  searchRadius: number;
+  setSearchRadius: (radius: number) => void;
 };
 
 const defaultSettings: Omit<
@@ -18,11 +20,13 @@ const defaultSettings: Omit<
   | 'setNotificationTimeFrame'
   | 'setIsNotificationsEnabled'
   | 'setIsBackgroundTrackingEnabled'
+  | 'setSearchRadius'
 > = {
   notificationRadius: 0.8, // Default radius in kilometers (0.5 miles ≈ 0.8 km)
   notificationTimeFrame: 24, // Default time frame in hours
   isNotificationsEnabled: true,
   isBackgroundTrackingEnabled: false,
+  searchRadius: 50, // Default search radius in kilometers (about 31 miles)
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(
@@ -51,6 +55,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
   );
   const [isBackgroundTrackingEnabled, setIsBackgroundTrackingEnabledState] =
     useState(defaultSettings.isBackgroundTrackingEnabled);
+  const [searchRadius, setSearchRadiusState] = useState(
+    defaultSettings.searchRadius
+  );
 
   // Load settings from AsyncStorage on mount
   useEffect(() => {
@@ -73,6 +80,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
           setIsBackgroundTrackingEnabledState(
             settings.isBackgroundTrackingEnabled ??
               defaultSettings.isBackgroundTrackingEnabled
+          );
+          setSearchRadiusState(
+            settings.searchRadius ?? defaultSettings.searchRadius
           );
         }
       } catch (error) {
@@ -130,6 +140,18 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
       notificationTimeFrame,
       isNotificationsEnabled,
       isBackgroundTrackingEnabled: enabled,
+      searchRadius,
+    });
+  };
+
+  const setSearchRadius = (radius: number) => {
+    setSearchRadiusState(radius);
+    saveSettings({
+      notificationRadius,
+      notificationTimeFrame,
+      isNotificationsEnabled,
+      isBackgroundTrackingEnabled,
+      searchRadius: radius,
     });
   };
 
@@ -144,6 +166,8 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsNotificationsEnabled,
         isBackgroundTrackingEnabled,
         setIsBackgroundTrackingEnabled,
+        searchRadius,
+        setSearchRadius,
       }}
     >
       {children}

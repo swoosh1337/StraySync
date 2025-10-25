@@ -14,6 +14,7 @@ export type Cat = {
   id: string;
   created_at: string;
   user_id: string;
+  auth_user_id?: string;
   latitude: number;
   longitude: number;
   image_url: string;
@@ -30,6 +31,8 @@ export type Cat = {
   contact_info?: string;
   last_seen_date?: string;
   animal_type?: 'cat' | 'dog';
+  status?: 'active' | 'helped' | 'rescued';
+  view_count?: number;
 };
 
 // Notification Types
@@ -46,12 +49,14 @@ export type AppSettings = {
   notificationTimeFrame: number;
   isNotificationsEnabled: boolean;
   isBackgroundTrackingEnabled: boolean;
+  searchRadius: number;
 };
 
 // Navigation Types
 export type RootStackParamList = {
   Onboarding: undefined;
   Main: undefined;
+  SignIn: undefined;
   CatDetails: { catId: string };
   AddCat: { latitude?: number; longitude?: number } | undefined;
 };

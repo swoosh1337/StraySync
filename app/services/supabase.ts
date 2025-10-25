@@ -1,37 +1,12 @@
 import 'react-native-url-polyfill/auto';
-import { createClient } from '@supabase/supabase-js';
-import * as SecureStore from 'expo-secure-store';
-import { EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY } from '@env';
 import { locationService } from './location';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// Import the shared Supabase client instead of creating a new one
+import { supabase } from './api/supabaseClient';
 
-// SecureStore adapter for Supabase auth
-const ExpoSecureStoreAdapter = {
-  getItem: (key: string) => {
-    return SecureStore.getItemAsync(key);
-  },
-  setItem: (key: string, value: string) => {
-    SecureStore.setItemAsync(key, value);
-  },
-  removeItem: (key: string) => {
-    SecureStore.deleteItemAsync(key);
-  },
-};
+// Re-export the supabase client for backward compatibility
+export { supabase };
 
-// Initialize Supabase client
-const supabaseUrl = EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
-
-console.log('Initializing Supabase with URL:', supabaseUrl.substring(0, 20) + '...');
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: ExpoSecureStoreAdapter,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-});
+console.log('Using shared Supabase client from api/supabaseClient');
 
 // Check if Supabase connection is working
 export const checkSupabaseConnection = async () => {
@@ -1377,30 +1352,278 @@ export const catService = {
         .from('animals')
         .update({ description })
         .eq('id', id);
-      
+
       if (!animalError) {
         console.log(`Successfully updated description for animal ${id} in animals table`);
         return true;
       }
-      
+
       console.log(`Failed to update in animals table, trying cats table: ${animalError.message}`);
-      
+
       // Fall back to cats table
       const { error } = await supabase
         .from('cats')
         .update({ description })
         .eq('id', id);
-      
+
       if (error) {
         console.error('Error updating cat description:', error);
         return false;
       }
-      
+
       console.log(`Successfully updated description for animal ${id} in cats table`);
       return true;
     } catch (error: any) {
       console.error('Error in updateCatDescription:', error.message || error);
       return false;
+    }
+  },
+
+  // Get all animals posted by a specific authenticated user
+  async getUserAnimals(authUserId: string): Promise<Cat[]> {
+    try {
+      console.log(`Fetching animals for authenticated user ${authUserId}...`);
+
+      // Try animals table first
+      const { data: animalsData, error: animalsError } = await supabase
+        .from('animals')
+        .select('*')
+        .eq('auth_user_id', authUserId)
+        .order('created_at', { ascending: false });
+
+      if (!animalsError && animalsData) {
+        console.log(`Retrieved ${animalsData.length} animals for user ${authUserId} from animals table`);
+        return animalsData;
+      }
+
+      console.log('Error fetching from animals table, trying cats table:', animalsError?.message);
+
+      // Fall back to cats table
+      const { data, error } = await supabase
+        .from('cats')
+        .select('*')
+        .eq('auth_user_id', authUserId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user animals:', error);
+        return [];
+      }
+
+      console.log(`Retrieved ${data?.length || 0} animals for user ${authUserId} from cats table`);
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getUserAnimals:', error.message || error);
+      return [];
+    }
+  },
+
+  // Update an animal sighting
+  async updateAnimal(
+    animalId: string,
+    updates: {
+      description?: string;
+      name?: string | null;
+      latitude?: number;
+      longitude?: number;
+    }
+  ): Promise<boolean> {
+    try {
+      console.log(`Updating animal ${animalId}...`, updates);
+
+      // Prepare updates without null/undefined values
+      const cleanUpdates: any = {};
+      if (updates.description !== undefined) cleanUpdates.description = updates.description;
+      if (updates.latitude !== undefined) cleanUpdates.latitude = updates.latitude;
+      if (updates.longitude !== undefined) cleanUpdates.longitude = updates.longitude;
+
+      // Try updating in animals table first
+      const { error: animalsError } = await supabase
+        .from('animals')
+        .update(cleanUpdates)
+        .eq('id', animalId);
+
+      if (!animalsError) {
+        console.log(`Successfully updated animal ${animalId} in animals table`);
+        return true;
+      }
+
+      console.log('Error updating in animals table, trying cats table:', animalsError.message);
+
+      // Fall back to cats table - try with name column
+      const updatesWithName = { ...cleanUpdates };
+      if (updates.name !== undefined) updatesWithName.name = updates.name;
+
+      const { error: catsWithNameError } = await supabase
+        .from('cats')
+        .update(updatesWithName)
+        .eq('id', animalId);
+
+      if (!catsWithNameError) {
+        console.log(`Successfully updated animal ${animalId} in cats table with name`);
+        return true;
+      }
+
+      // If name column doesn't exist in cats table either, try without it
+      if (catsWithNameError.message?.includes('name')) {
+        console.log('name column not found, updating without it...');
+        const { error } = await supabase
+          .from('cats')
+          .update(cleanUpdates)
+          .eq('id', animalId);
+
+        if (error) {
+          console.error('Error updating animal:', error);
+          return false;
+        }
+
+        console.log(`Successfully updated animal ${animalId} in cats table without name`);
+        return true;
+      }
+
+      console.error('Error updating animal:', catsWithNameError);
+      return false;
+    } catch (error: any) {
+      console.error('Error in updateAnimal:', error.message || error);
+      return false;
+    }
+  },
+};
+
+// Profile service for user profile management
+export const profileService = {
+  // Update user profile
+  async updateProfile(
+    authUserId: string,
+    updates: {
+      display_name?: string;
+      avatar_url?: string;
+    }
+  ): Promise<boolean> {
+    try {
+      console.log('=== PROFILE UPDATE START ===');
+      console.log(`User ID: ${authUserId}`);
+      console.log('Updates:', JSON.stringify(updates, null, 2));
+
+      // Check if we have a valid session with retry logic
+      let sessionData = null;
+      let attempts = 0;
+      const maxAttempts = 5; // Increased to 5 attempts
+      const delayMs = 500; // Increased delay to 500ms
+
+      while (attempts < maxAttempts) {
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        
+        if (data.session) {
+          sessionData = data;
+          break;
+        }
+
+        attempts++;
+        if (attempts < maxAttempts) {
+          console.log(`⚠️ No session found (attempt ${attempts}/${maxAttempts}), waiting ${delayMs}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+
+      console.log('Current session:', sessionData?.session ? 'EXISTS' : 'NULL');
+      console.log('Session user ID:', sessionData?.session?.user?.id);
+      console.log('Matches target user?', sessionData?.session?.user?.id === authUserId);
+
+      if (!sessionData?.session) {
+        console.error('❌ No active session after retries! Cannot update profile.');
+        console.error('This usually means the OAuth session was not properly established.');
+        console.error('Please wait a moment for the session to be established, then try again.');
+        return false;
+      }
+
+      if (sessionData.session.user.id !== authUserId) {
+        console.error('❌ Session user ID does not match target user ID!');
+        console.error(`Session: ${sessionData.session.user.id}, Target: ${authUserId}`);
+        return false;
+      }
+
+      // Try update with .select() to get the updated row back
+      const { data, error, status, statusText } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', authUserId)
+        .select()
+        .single();
+
+      console.log('Update status:', status, statusText);
+      console.log('Updated data:', data);
+
+      if (error) {
+        console.error('❌ Error updating profile:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        return false;
+      }
+
+      // If we got data back, the update was successful
+      if (!data) {
+        console.error('⚠️ Update returned no data - this should not happen');
+
+        // Try a direct test query to see if the update actually worked
+        const { data: testData, error: testError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', authUserId)
+          .single();
+
+        if (testError) {
+          console.error('❌ Cannot read profile after update:', testError);
+          return false;
+        } else {
+          console.log('✅ Profile after update:', testData);
+          // Check if the update actually applied
+          const updateApplied = Object.keys(updates).every(
+            key => testData[key as keyof typeof updates] === updates[key as keyof typeof updates]
+          );
+          if (updateApplied) {
+            console.log('✅ Update was actually successful (verified via read)');
+            return true;
+          } else {
+            console.error('❌ Update did not apply');
+            return false;
+          }
+        }
+      }
+
+      console.log('✅ Profile update successful!');
+      console.log('=== PROFILE UPDATE END ===');
+      return true;
+    } catch (error: any) {
+      console.error('❌ Exception in updateProfile:', error.message || error);
+      return false;
+    }
+  },
+
+  // Get user profile
+  async getProfile(authUserId: string): Promise<any | null> {
+    try {
+      console.log('=== PROFILE FETCH START ===');
+      console.log(`Fetching profile for user: ${authUserId}`);
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUserId)
+        .single();
+
+      if (error) {
+        console.error('❌ Error fetching profile:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        return null;
+      }
+
+      console.log('✅ Profile fetch successful!');
+      console.log('Profile data:', JSON.stringify(data, null, 2));
+      console.log('=== PROFILE FETCH END ===');
+      return data;
+    } catch (error: any) {
+      console.error('❌ Exception in getProfile:', error.message || error);
+      return null;
     }
   },
 }; 

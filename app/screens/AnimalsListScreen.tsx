@@ -18,6 +18,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList, Cat } from '../types';
 import { catService } from '../services/supabase';
+import { locationService } from '../services/location';
+import { useSettings } from '../contexts/SettingsContext';
 
 type AnimalsListScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -28,12 +30,17 @@ type AnimalFilter = 'all' | 'cats' | 'dogs';
 
 const AnimalsListScreen: React.FC = () => {
   const navigation = useNavigation<AnimalsListScreenNavigationProp>();
+  const { searchRadius } = useSettings();
   const [animals, setAnimals] = useState<Cat[]>([]);
   const [filteredAnimals, setFilteredAnimals] = useState<Cat[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [animalFilter, setAnimalFilter] = useState<AnimalFilter>('all');
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   // Theme colors
   const THEME = {
@@ -48,6 +55,17 @@ const AnimalsListScreen: React.FC = () => {
     dogColor: '#8B4513', // Brown color for dogs
   };
 
+  // Get user location on mount
+  useEffect(() => {
+    const getUserLocation = async () => {
+      const location = await locationService.getCurrentLocation();
+      if (location) {
+        setUserLocation(location);
+      }
+    };
+    getUserLocation();
+  }, []);
+
   const fetchAnimals = useCallback(async () => {
     try {
       setLoading(true);
@@ -61,6 +79,19 @@ const AnimalsListScreen: React.FC = () => {
         fetchedAnimals = await catService.getDogsOnly();
       }
       
+      // Filter by distance if user location is available
+      if (userLocation) {
+        fetchedAnimals = fetchedAnimals.filter(animal => {
+          const distance = locationService.calculateDistance(
+            userLocation.latitude,
+            userLocation.longitude,
+            animal.latitude,
+            animal.longitude
+          );
+          return distance <= searchRadius;
+        });
+      }
+      
       setAnimals(fetchedAnimals);
       applySearch(fetchedAnimals, searchQuery);
     } catch (error) {
@@ -69,7 +100,7 @@ const AnimalsListScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [animalFilter, searchQuery]);
+  }, [animalFilter, searchQuery, userLocation, searchRadius]);
 
   // Add focus effect to refresh the list when the screen comes into focus
   useFocusEffect(
@@ -182,6 +213,17 @@ const AnimalsListScreen: React.FC = () => {
     const isDog = item.animal_type === 'dog';
     const iconColor = isDog ? THEME.dogColor : THEME.secondary;
     
+    // Calculate distance if user location is available
+    let distance: number | null = null;
+    if (userLocation) {
+      distance = locationService.calculateDistance(
+        userLocation.latitude,
+        userLocation.longitude,
+        item.latitude,
+        item.longitude
+      );
+    }
+    
     return (
       <TouchableOpacity
         style={styles.animalCard}
@@ -203,6 +245,11 @@ const AnimalsListScreen: React.FC = () => {
             <Text style={[styles.animalType, { color: iconColor }]}>
               {isDog ? 'Dog' : 'Cat'}
             </Text>
+            {distance !== null && (
+              <Text style={styles.distanceText}>
+                • {distance < 1 ? `${(distance * 1000).toFixed(0)}m` : `${distance.toFixed(1)}km`}
+              </Text>
+            )}
           </View>
           <Text style={styles.animalDescription} numberOfLines={2}>
             {item.description || 'No description provided'}
@@ -222,12 +269,16 @@ const AnimalsListScreen: React.FC = () => {
         <Text style={styles.emptyText}>
           {searchQuery 
             ? 'No animals match your search' 
-            : 'No animals found'}
+            : userLocation 
+              ? `No animals within ${searchRadius}km`
+              : 'No animals found'}
         </Text>
         <Text style={styles.emptySubtext}>
           {searchQuery 
             ? 'Try a different search term or filter' 
-            : 'Animals you add will appear here'}
+            : userLocation
+              ? 'Try increasing the search radius in Settings'
+              : 'Animals you add will appear here'}
         </Text>
       </View>
     );
@@ -252,6 +303,15 @@ const AnimalsListScreen: React.FC = () => {
       </View>
       
       {renderFilterButtons()}
+      
+      {userLocation && (
+        <View style={styles.radiusInfo}>
+          <Ionicons name="location" size={16} color={THEME.secondary} />
+          <Text style={styles.radiusText}>
+            Showing animals within {searchRadius}km of your location
+          </Text>
+        </View>
+      )}
       
       {loading && !refreshing ? (
         <View style={styles.loadingContainer}>
@@ -379,6 +439,11 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     marginLeft: 4,
   },
+  distanceText: {
+    fontSize: 12,
+    color: '#757575',
+    marginLeft: 4,
+  },
   animalDescription: {
     fontSize: 14,
     color: '#212121',
@@ -407,6 +472,23 @@ const styles = StyleSheet.create({
     color: '#9E9E9E',
     marginTop: 8,
     textAlign: 'center',
+  },
+  radiusInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 8,
+  },
+  radiusText: {
+    fontSize: 13,
+    color: '#2E7D32',
+    marginLeft: 6,
+    fontWeight: '500',
   },
 });
 

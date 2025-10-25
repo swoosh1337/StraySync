@@ -161,19 +161,20 @@ export const catService = {
   async isUserOwner(catId: string, userId: string): Promise<boolean> {
     try {
       console.log(`Checking if user ${userId} is owner of cat ${catId}...`);
-      
+
       const { data, error } = await supabase
         .from('cats')
-        .select('user_id')
+        .select('user_id, auth_user_id')
         .eq('id', catId)
         .single();
-      
+
       if (error) {
         console.error('Error checking cat ownership:', error);
         return false;
       }
-      
-      const isOwner = data.user_id === userId;
+
+      // Check both auth_user_id (for authenticated users) and user_id (legacy)
+      const isOwner = data.auth_user_id === userId || data.user_id === userId;
       console.log(`User ${userId} is ${isOwner ? '' : 'not '}the owner of cat ${catId}`);
       return isOwner;
     } catch (error: any) {
@@ -308,6 +309,30 @@ export const catService = {
       return oldCatIds;
     } catch (error: any) {
       console.error('Error in cleanupOldCatSightings:', error.message || error);
+      return [];
+    }
+  },
+
+  // Get all animals posted by a specific user
+  async getUserAnimals(authUserId: string): Promise<Cat[]> {
+    try {
+      console.log(`Fetching animals for user ${authUserId}...`);
+
+      const { data, error } = await supabase
+        .from('cats')
+        .select('*')
+        .eq('auth_user_id', authUserId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user animals:', error);
+        return [];
+      }
+
+      console.log(`Retrieved ${data.length} animals for user ${authUserId}`);
+      return data;
+    } catch (error: any) {
+      console.error('Error in getUserAnimals:', error.message || error);
       return [];
     }
   }

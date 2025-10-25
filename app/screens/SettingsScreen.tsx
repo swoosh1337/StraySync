@@ -18,6 +18,7 @@ import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
+import { cleanupService } from '../services/cleanup';
 
 type SettingsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -35,6 +36,8 @@ const SettingsScreen: React.FC = () => {
     setIsNotificationsEnabled,
     isBackgroundTrackingEnabled,
     setIsBackgroundTrackingEnabled,
+    searchRadius,
+    setSearchRadius,
   } = useSettings();
 
   // Convert kilometers to miles for display
@@ -45,10 +48,10 @@ const SettingsScreen: React.FC = () => {
   // Request notification permissions
   const requestNotificationPermission = async () => {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    
+
     if (existingStatus !== 'granted') {
       const { status } = await Notifications.requestPermissionsAsync();
-      
+
       if (status !== 'granted') {
         Alert.alert(
           'Permission Required',
@@ -57,14 +60,14 @@ const SettingsScreen: React.FC = () => {
         return false;
       }
     }
-    
+
     return true;
   };
 
   // Request location permissions
   const requestLocationPermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
-    
+
     if (status !== 'granted') {
       Alert.alert(
         'Permission Required',
@@ -72,7 +75,7 @@ const SettingsScreen: React.FC = () => {
       );
       return false;
     }
-    
+
     return true;
   };
 
@@ -113,6 +116,32 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
+  const handleCleanupOldRecords = async () => {
+    Alert.alert(
+      'Clean Up Old Records',
+      'This will delete all animal sightings older than 2 weeks. This action cannot be undone. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clean Up',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const deletedCount = await cleanupService.manualCleanup();
+              Alert.alert(
+                'Cleanup Complete',
+                `Successfully removed ${deletedCount} old animal sighting${deletedCount !== 1 ? 's' : ''}.`
+              );
+            } catch (error) {
+              console.error('Error during cleanup:', error);
+              Alert.alert('Error', 'Failed to clean up old records. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Add these functions to handle button presses
   const handleSupportPress = () => {
     // List of organizations that support stray animals
@@ -122,7 +151,7 @@ const SettingsScreen: React.FC = () => {
       { name: 'Alley Cat Allies', url: 'https://www.alleycat.org/ways-to-give/' },
       { name: 'Local Animal Shelter', url: 'https://www.petfinder.com/animal-shelters-and-rescues/search/' }
     ];
-    
+
     // Show an alert with options
     Alert.alert(
       'Support Stray Animalsr',
@@ -132,8 +161,8 @@ const SettingsScreen: React.FC = () => {
           text: option.name,
           onPress: () => Linking.openURL(option.url)
         })),
-        { 
-          text: 'Cancel', 
+        {
+          text: 'Cancel',
           style: 'cancel' as const
         }
       ]
@@ -151,7 +180,7 @@ const SettingsScreen: React.FC = () => {
           })
       },
     ];
-    
+
     // Show an alert with options
     Alert.alert(
       'Visit Our Website',
@@ -161,8 +190,8 @@ const SettingsScreen: React.FC = () => {
           text: option.name,
           onPress: option.action
         })),
-        { 
-          text: 'Cancel', 
+        {
+          text: 'Cancel',
           style: 'cancel' as const
         }
       ]
@@ -173,7 +202,7 @@ const SettingsScreen: React.FC = () => {
     <ScrollView style={styles.container}>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Notifications</Text>
-        
+
         <View style={styles.settingRow}>
           <View style={styles.settingLabelContainer}>
             <Ionicons name="notifications-outline" size={24} color="#4CAF50" />
@@ -186,7 +215,7 @@ const SettingsScreen: React.FC = () => {
             thumbColor={isNotificationsEnabled ? '#fff' : '#f4f3f4'}
           />
         </View>
-        
+
         <View style={[styles.settingRow, !isNotificationsEnabled && styles.disabled]}>
           <View style={styles.settingLabelContainer}>
             <Ionicons name="location-outline" size={24} color="#4CAF50" />
@@ -196,7 +225,7 @@ const SettingsScreen: React.FC = () => {
             {notificationRadius.toFixed(1)} km ({kmToMiles(notificationRadius)} mi)
           </Text>
         </View>
-        
+
         <Slider
           style={styles.slider}
           minimumValue={0.1}
@@ -209,7 +238,7 @@ const SettingsScreen: React.FC = () => {
           thumbTintColor="#4CAF50"
           disabled={!isNotificationsEnabled}
         />
-        
+
         <View style={[styles.settingRow, !isNotificationsEnabled && styles.disabled]}>
           <View style={styles.settingLabelContainer}>
             <Ionicons name="time-outline" size={24} color="#4CAF50" />
@@ -219,7 +248,7 @@ const SettingsScreen: React.FC = () => {
             {notificationTimeFrame} {notificationTimeFrame === 1 ? 'hour' : 'hours'}
           </Text>
         </View>
-        
+
         <View style={styles.timeFrameButtons}>
           {[1, 6, 12, 24, 48, 72].map((hours) => (
             <TouchableOpacity
@@ -244,10 +273,36 @@ const SettingsScreen: React.FC = () => {
           ))}
         </View>
       </View>
-      
+
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Location</Text>
-        
+        <Text style={styles.sectionTitle}>Location & Search</Text>
+
+        <View style={styles.settingRow}>
+          <View style={styles.settingLabelContainer}>
+            <Ionicons name="search-outline" size={24} color="#4CAF50" />
+            <Text style={styles.settingLabel}>Search Radius</Text>
+          </View>
+          <Text style={styles.settingValue}>
+            {searchRadius.toFixed(0)} km ({kmToMiles(searchRadius)} mi)
+          </Text>
+        </View>
+
+        <Slider
+          style={styles.slider}
+          minimumValue={5}
+          maximumValue={200}
+          step={5}
+          value={searchRadius}
+          onValueChange={setSearchRadius}
+          minimumTrackTintColor="#4CAF50"
+          maximumTrackTintColor="#d3d3d3"
+          thumbTintColor="#4CAF50"
+        />
+
+        <Text style={styles.helperText}>
+          Only animals within this radius from your location will be shown on the map.
+        </Text>
+
         <View style={styles.settingRow}>
           <View style={styles.settingLabelContainer}>
             <Ionicons name="navigate-outline" size={24} color="#4CAF50" />
@@ -260,41 +315,41 @@ const SettingsScreen: React.FC = () => {
             thumbColor={isBackgroundTrackingEnabled ? '#fff' : '#f4f3f4'}
           />
         </View>
-        
-        {isBackgroundTrackingEnabled && (
+
+        {/* {isBackgroundTrackingEnabled && (
           <Text style={styles.warningText}>
             Background location tracking will use more battery but will allow you to
             receive notifications even when the app is closed.
           </Text>
-        )}
+        )} */}
       </View>
-      
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>About</Text>
-        
+
         <View style={styles.aboutContainer}>
           <Text style={styles.appName}>StraySync</Text>
-          <Text style={styles.appVersion}>Version 1.0.0</Text>
+          <Text style={styles.appVersion}>Version 1.1.0</Text>
           <Text style={styles.appDescription}>
             Help locate and track stray animals in your area. Take photos, mark
             locations, and get notifications when you're near a stray animal.
           </Text>
-          
-          <TouchableOpacity 
-            style={[styles.aboutButton, { backgroundColor: '#2E7D32' }]} 
+
+          <TouchableOpacity
+            style={[styles.aboutButton, { backgroundColor: '#2E7D32' }]}
             onPress={handleSupportPress}
           >
             <Ionicons name="heart" size={20} color="white" />
             <Text style={styles.aboutButtonText}>Support Stray Animals</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          {/* <TouchableOpacity 
             style={[styles.aboutButton, { backgroundColor: '#388E3C' }]} 
             onPress={handleContactPress}
           >
             <Ionicons name="globe" size={20} color="white" />
             <Text style={styles.aboutButtonText}>Visit Website</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
     </ScrollView>
@@ -385,6 +440,13 @@ const styles = StyleSheet.create({
     marginTop: 5,
     fontStyle: 'italic',
   },
+  helperText: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: -5,
+    marginBottom: 10,
+    fontStyle: 'italic',
+  },
   aboutContainer: {
     alignItems: 'center',
   },
@@ -422,6 +484,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     marginLeft: 10,
+  },
+  cleanupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FF5722',
+  },
+  cleanupButtonText: {
+    color: '#FF5722',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 8,
   },
 });
 

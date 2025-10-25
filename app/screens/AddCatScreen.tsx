@@ -25,6 +25,7 @@ import MapView, { Marker } from 'react-native-maps';
 import { catService, supabase } from '../services/supabase';
 import { locationService } from '../services/location/locationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../contexts/AuthContext';
 
 type AddCatScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -38,7 +39,8 @@ const AddCatScreen: React.FC = () => {
   const route = useRoute<AddCatScreenRouteProp>();
   const scrollViewRef = useRef<ScrollView>(null);
   const descriptionInputRef = useRef<TextInput>(null);
-  
+  const { user, isLoading: authLoading } = useAuth();
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
@@ -61,32 +63,41 @@ const AddCatScreen: React.FC = () => {
     inactive: '#90A4AE',
   };
 
+  // Check authentication - redirect to sign in if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      Alert.alert(
+        'Sign In Required',
+        'You need to sign in to add animal sightings.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+            onPress: () => navigation.goBack()
+          },
+          {
+            text: 'Sign In',
+            onPress: () => {
+              navigation.goBack();
+              // Navigate to SignIn screen after going back
+              setTimeout(() => {
+                navigation.navigate('SignIn');
+              }, 100);
+            }
+          }
+        ]
+      );
+    }
+  }, [authLoading, user, navigation]);
+
   // Get the current user ID and location
   useEffect(() => {
     const initialize = async () => {
-      // Get user ID or retrieve anonymous ID
-      const { data } = await supabase.auth.getSession();
-      let currentUserId = data.session?.user?.id;
-      
-      if (!currentUserId) {
-        // For anonymous users, get stored ID or create new one
-        try {
-          const storedId = await AsyncStorage.getItem('anonymousUserId');
-          if (storedId) {
-            currentUserId = storedId;
-            console.log('Retrieved anonymous ID from storage:', storedId);
-          } else {
-            currentUserId = `anonymous-${Math.random().toString(36).substring(2, 9)}`;
-            await AsyncStorage.setItem('anonymousUserId', currentUserId);
-            console.log('Created and stored new anonymous ID:', currentUserId);
-          }
-        } catch (error) {
-          console.error('Error with anonymous ID:', error);
-          currentUserId = `anonymous-${Math.random().toString(36).substring(2, 9)}`;
-        }
+      // Use authenticated user's ID
+      if (user?.id) {
+        setUserId(user.id);
+        console.log('Using authenticated user ID:', user.id);
       }
-      
-      setUserId(currentUserId);
       
       // If location is 0,0, try to get current location
       if (location.latitude === 0 && location.longitude === 0) {
@@ -122,7 +133,7 @@ const AddCatScreen: React.FC = () => {
       keyboardDidShowListener.remove();
       keyboardDidHideListener.remove();
     };
-  }, []);
+  }, [user]);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -281,6 +292,7 @@ const AddCatScreen: React.FC = () => {
       // Prepare the cat data
       const catData = {
         user_id: currentUserId,
+        auth_user_id: user?.id, // Add authenticated user ID
         latitude: location.latitude,
         longitude: location.longitude,
         image_url: imageUrl,

@@ -67,7 +67,7 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
           style={styles.catIcon} 
           resizeMode="contain"
         />
-        <Text style={styles.title}>stray animal Finder</Text>
+        <Text style={styles.title}>Stray Animal Finder</Text>
         <Text style={styles.subtitle}>Help find stray animals in your area</Text>
       </Animated.View>
     </View>

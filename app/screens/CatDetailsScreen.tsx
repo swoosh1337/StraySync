@@ -21,7 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { catService, supabase } from '../services/supabase';
 import { locationService } from '../services/location/locationService';
 import { formatDistanceToNow } from 'date-fns';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../contexts/AuthContext';
 
 type CatDetailsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -34,11 +34,11 @@ const CatDetailsScreen: React.FC = () => {
   const navigation = useNavigation<CatDetailsScreenNavigationProp>();
   const route = useRoute<CatDetailsScreenRouteProp>();
   const mapRef = useRef<MapView>(null);
+  const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [animal, setAnimal] = useState<any>(null);
   const [currentLocation, setCurrentLocation] = useState<any>(null);
-  const [userId, setUserId] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editedDescription, setEditedDescription] = useState('');
@@ -58,26 +58,7 @@ const CatDetailsScreen: React.FC = () => {
     const fetchAnimalDetails = async () => {
       try {
         setLoading(true);
-        
-        // Get current user ID
-        const { data } = await supabase.auth.getSession();
-        let currentUserId = data.session?.user?.id;
-        
-        // For anonymous users, get stored ID
-        if (!currentUserId) {
-          try {
-            const storedId = await AsyncStorage.getItem('anonymousUserId');
-            if (storedId) {
-              currentUserId = storedId;
-              console.log('Retrieved anonymous ID from storage:', storedId);
-            }
-          } catch (error) {
-            console.error('Error retrieving anonymous ID:', error);
-          }
-        }
-        
-        setUserId(currentUserId || null);
-        
+
         // Get animal details
         const animalId = route.params?.catId || '';
         if (!animalId) {
@@ -86,7 +67,7 @@ const CatDetailsScreen: React.FC = () => {
           navigation.goBack();
           return;
         }
-        
+
         const animalDetails = await catService.getCatById(animalId);
         if (!animalDetails) {
           console.error('Animal not found');
@@ -94,14 +75,22 @@ const CatDetailsScreen: React.FC = () => {
           navigation.goBack();
           return;
         }
-        
+
         setAnimal(animalDetails);
         setEditedDescription(animalDetails.description || '');
-        
-        // Check if current user is the owner
-        if (currentUserId) {
-          const ownerStatus = await catService.isUserOwner(animalId, currentUserId);
-          setIsOwner(ownerStatus);
+
+        // Check if current authenticated user is the owner
+        if (user?.id) {
+          // Check if user's auth ID matches the animal's auth_user_id
+          const isUserOwner = animalDetails.auth_user_id === user.id;
+          console.log('Ownership check:', {
+            userId: user.id,
+            animalAuthUserId: animalDetails.auth_user_id,
+            isOwner: isUserOwner
+          });
+          setIsOwner(isUserOwner);
+        } else {
+          setIsOwner(false);
         }
         
         // Get current location for distance calculation
@@ -133,9 +122,9 @@ const CatDetailsScreen: React.FC = () => {
         setLoading(false);
       }
     };
-    
+
     fetchAnimalDetails();
-  }, [route.params?.catId]);
+  }, [route.params?.catId, user]);
 
   const handleDelete = async () => {
     Alert.alert(
@@ -203,7 +192,7 @@ const CatDetailsScreen: React.FC = () => {
 
   const handleShare = async () => {
     try {
-      const message = `Check out this stray animal I found using the stray animal Finder app! ${
+      const message = `Check out this stray animal I found using the  app! ${
         animal?.description || ''
       }`;
       
@@ -352,13 +341,13 @@ const CatDetailsScreen: React.FC = () => {
           {isOwner && (
             <View style={styles.ownerActionsContainer}>
               <TouchableOpacity
-                style={styles.editDescriptionButton}
-                onPress={handleEditDescription}
+                style={styles.editButton}
+                onPress={() => navigation.navigate('EditAnimal', { animalId: animal.id })}
               >
                 <Ionicons name="create-outline" size={22} color="#fff" />
-                <Text style={styles.editButtonText}>Edit Description</Text>
+                <Text style={styles.editButtonText}>Edit</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.deleteButton}
                 onPress={handleDelete}
@@ -646,7 +635,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 24,
   },
-  editDescriptionButton: {
+  editButton: {
     backgroundColor: '#2E7D32',
     borderRadius: 12,
     flexDirection: 'row',

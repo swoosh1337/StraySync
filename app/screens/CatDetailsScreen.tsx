@@ -44,6 +44,9 @@ const CatDetailsScreen: React.FC = () => {
   const [editedDescription, setEditedDescription] = useState('');
   const [savingDescription, setSavingDescription] = useState(false);
   const [distance, setDistance] = useState<string | null>(null);
+  const [hasHelped, setHasHelped] = useState(false);
+  const [hasRescued, setHasRescued] = useState(false);
+  const [recordingAction, setRecordingAction] = useState(false);
 
   // Theme colors
   const THEME = {
@@ -52,6 +55,8 @@ const CatDetailsScreen: React.FC = () => {
     accent: '#388E3C',
     inactive: '#90A4AE',
     danger: '#D32F2F',
+    helped: '#2196F3',
+    rescued: '#FF9800',
   };
 
   useEffect(() => {
@@ -89,6 +94,17 @@ const CatDetailsScreen: React.FC = () => {
             isOwner: isUserOwner
           });
           setIsOwner(isUserOwner);
+
+          // Check if user has already helped or rescued this animal
+          const actions = await catService.getAnimalActions(animalId);
+          const userHelped = actions.some(
+            (a) => a.user_id === user.id && a.action_type === 'helped'
+          );
+          const userRescued = actions.some(
+            (a) => a.user_id === user.id && a.action_type === 'rescued'
+          );
+          setHasHelped(userHelped);
+          setHasRescued(userRescued);
         } else {
           setIsOwner(false);
         }
@@ -190,12 +206,102 @@ const CatDetailsScreen: React.FC = () => {
     }
   };
 
+  const handleHelped = async () => {
+    if (!user?.id) {
+      Alert.alert('Sign In Required', 'Please sign in to record that you helped this animal.');
+      return;
+    }
+
+    if (hasHelped) {
+      Alert.alert('Already Recorded', 'You have already recorded helping this animal!');
+      return;
+    }
+
+    try {
+      setRecordingAction(true);
+      const success = await catService.recordAction(
+        user.id,
+        animal.id,
+        'helped'
+      );
+
+      if (success) {
+        setHasHelped(true);
+        Alert.alert(
+          'Thank You!',
+          'Your help has been recorded. Thank you for caring for this animal!'
+        );
+      } else {
+        Alert.alert('Already Recorded', 'You have already recorded helping this animal.');
+      }
+    } catch (error) {
+      console.error('Error recording help:', error);
+      Alert.alert('Error', 'Failed to record your help. Please try again.');
+    } finally {
+      setRecordingAction(false);
+    }
+  };
+
+  const handleRescued = async () => {
+    if (!user?.id) {
+      Alert.alert('Sign In Required', 'Please sign in to record that you rescued this animal.');
+      return;
+    }
+
+    if (hasRescued) {
+      Alert.alert('Already Recorded', 'You have already recorded rescuing this animal!');
+      return;
+    }
+
+    Alert.alert(
+      'Confirm Rescue',
+      'Did you adopt this animal or take it to a shelter? This will remove it from the map.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, I Rescued It',
+          onPress: async () => {
+            try {
+              setRecordingAction(true);
+              const success = await catService.recordAction(
+                user.id,
+                animal.id,
+                'rescued'
+              );
+
+              if (success) {
+                setHasRescued(true);
+                Alert.alert(
+                  'Amazing!',
+                  'Thank you for rescuing this animal! The sighting will be removed from the map.',
+                  [
+                    {
+                      text: 'OK',
+                      onPress: () => navigation.goBack(),
+                    },
+                  ]
+                );
+              } else {
+                Alert.alert('Already Recorded', 'You have already recorded rescuing this animal.');
+              }
+            } catch (error) {
+              console.error('Error recording rescue:', error);
+              Alert.alert('Error', 'Failed to record the rescue. Please try again.');
+            } finally {
+              setRecordingAction(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleShare = async () => {
     try {
       const message = `Check out this stray animal I found using the  app! ${
         animal?.description || ''
       }`;
-      
+
       await Share.share({
         message,
         title: `stray animal Sighting`,
@@ -336,6 +442,63 @@ const CatDetailsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Help/Rescue Actions (for non-owners and authenticated users) */}
+          {!isOwner && user && (
+            <View style={styles.actionButtonsContainer}>
+              <Text style={styles.actionTitle}>Did you interact with this animal?</Text>
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.helpButton,
+                    hasHelped && styles.helpButtonActive,
+                    recordingAction && styles.buttonDisabled,
+                  ]}
+                  onPress={handleHelped}
+                  disabled={recordingAction || hasHelped}
+                >
+                  <Ionicons
+                    name={hasHelped ? 'checkmark-circle' : 'hand-left-outline'}
+                    size={22}
+                    color={hasHelped ? '#4CAF50' : '#fff'}
+                  />
+                  <Text style={[styles.helpButtonText, hasHelped && styles.helpButtonTextActive]}>
+                    {hasHelped ? 'Helped ✓' : 'I Helped'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.rescueButton,
+                    hasRescued && styles.rescueButtonActive,
+                    recordingAction && styles.buttonDisabled,
+                  ]}
+                  onPress={handleRescued}
+                  disabled={recordingAction || hasRescued}
+                >
+                  {recordingAction ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name={hasRescued ? 'checkmark-circle' : 'heart-outline'}
+                        size={22}
+                        color={hasRescued ? '#4CAF50' : '#fff'}
+                      />
+                      <Text style={[styles.rescueButtonText, hasRescued && styles.rescueButtonTextActive]}>
+                        {hasRescued ? 'Rescued ✓' : 'I Rescued'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.actionHint}>
+                {hasHelped || hasRescued
+                  ? 'Thank you for helping animals in need!'
+                  : 'Let others know you helped or rescued this animal'}
+              </Text>
+            </View>
+          )}
 
           {/* Owner actions */}
           {isOwner && (
@@ -650,6 +813,90 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  actionButtonsContainer: {
+    marginTop: 20,
+    marginBottom: 20,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    padding: 16,
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  helpButton: {
+    flex: 1,
+    backgroundColor: '#2196F3',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  helpButtonActive: {
+    backgroundColor: '#E8F5E9',
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  helpButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+    marginLeft: 8,
+  },
+  helpButtonTextActive: {
+    color: '#4CAF50',
+  },
+  rescueButton: {
+    flex: 1,
+    backgroundColor: '#FF9800',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  rescueButtonActive: {
+    backgroundColor: '#E8F5E9',
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  rescueButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+    marginLeft: 8,
+  },
+  rescueButtonTextActive: {
+    color: '#4CAF50',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  actionHint: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
 

@@ -43,6 +43,10 @@ const ProfileScreen: React.FC = () => {
   console.log('🎭 [ProfileScreen] Render - Current profile:', profile);
   console.log('User ID:', user?.id);
 
+  // Stats state
+  const [helpedCount, setHelpedCount] = useState(0);
+  const [rescuedCount, setRescuedCount] = useState(0);
+
   // Username editing state
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [newUsername, setNewUsername] = useState('');
@@ -66,16 +70,25 @@ const ProfileScreen: React.FC = () => {
   const fetchMyAnimals = async () => {
     if (!user?.id) {
       setMyAnimals([]);
+      setHelpedCount(0);
+      setRescuedCount(0);
       setLoading(false);
       return;
     }
 
     try {
-      const animals = await catService.getUserAnimals(user.id);
+      // Fetch both animals and stats in parallel
+      const [animals, stats] = await Promise.all([
+        catService.getUserAnimals(user.id),
+        catService.getUserStats(user.id),
+      ]);
+
       setMyAnimals(animals);
+      setHelpedCount(stats.helped);
+      setRescuedCount(stats.rescued);
     } catch (error) {
-      console.error('Error fetching user animals:', error);
-      Alert.alert('Error', 'Failed to load your animals. Please try again.');
+      console.error('Error fetching user data:', error);
+      Alert.alert('Error', 'Failed to load your data. Please try again.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -384,15 +397,11 @@ const ProfileScreen: React.FC = () => {
           <Text style={styles.statLabel}>Sightings</Text>
         </View>
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>
-            {myAnimals.filter((a) => a.status === 'helped').length}
-          </Text>
+          <Text style={styles.statNumber}>{helpedCount}</Text>
           <Text style={styles.statLabel}>Helped</Text>
         </View>
         <View style={styles.statBox}>
-          <Text style={styles.statNumber}>
-            {myAnimals.filter((a) => a.status === 'rescued').length}
-          </Text>
+          <Text style={styles.statNumber}>{rescuedCount}</Text>
           <Text style={styles.statLabel}>Rescued</Text>
         </View>
       </View>

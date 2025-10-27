@@ -295,28 +295,45 @@ export const catService = {
     }
   },
   
-  // Get all animal sightings (cats and dogs)
+  // Get all animal sightings (cats and dogs) - excludes rescued animals
   async getCats(): Promise<Cat[]> {
     try {
-      // Try to use the animals table first
+      // Try to use the animals table first with server-side filtering
       const { data: animalsData, error: animalsError } = await supabase
         .from('animals')
         .select('*')
+        .or('is_rescued.is.null,is_rescued.eq.false')
         .order('spotted_at', { ascending: false });
-      
+
       if (!animalsError) {
-        console.log(`Found ${animalsData?.length || 0} animals in animals table`);
+        console.log(`Found ${animalsData?.length || 0} animals in animals table (excluding rescued)`);
         return animalsData || [];
       }
-      
+
+      // If server-side filtering failed, try without the filter
+      if (animalsError.message.includes('is_rescued')) {
+        console.log('is_rescued column not found, trying without filter...');
+        const { data: allData, error: allError } = await supabase
+          .from('animals')
+          .select('*')
+          .order('spotted_at', { ascending: false });
+
+        if (!allError && allData) {
+          // Client-side filtering as fallback
+          const filtered = allData.filter(animal => !animal.is_rescued);
+          console.log(`Found ${filtered.length} animals in animals table (client-side filtered)`);
+          return filtered;
+        }
+      }
+
       console.log('Error fetching from animals table, trying cats table:', animalsError.message);
-      
+
       // Fall back to the cats table
       const { data, error } = await supabase
         .from('cats')
         .select('*')
         .order('spotted_at', { ascending: false });
-      
+
       if (error) {
         // Check if this is a security policy error
         if (error.message.includes('security policy')) {
@@ -326,9 +343,11 @@ export const catService = {
         console.error('Error fetching cats:', error);
         return [];
       }
-      
-      console.log(`Found ${data?.length || 0} animals in cats table`);
-      return data || [];
+
+      // Filter client-side for cats table too
+      const filtered = (data || []).filter(animal => !animal.is_rescued);
+      console.log(`Found ${filtered.length} animals in cats table (client-side filtered)`);
+      return filtered;
     } catch (error: any) {
       console.error('Error in getCats:', error.message || error);
       return [];
@@ -1486,6 +1505,113 @@ export const catService = {
     } catch (error: any) {
       console.error('Error in updateAnimal:', error.message || error);
       return false;
+    }
+  },
+
+  // Record a user action on an animal (helped or rescued)
+  async recordAction(
+    userId: string,
+    animalId: string,
+    actionType: 'helped' | 'rescued'
+  ): Promise<boolean> {
+    try {
+      console.log(`Recording ${actionType} action for animal ${animalId} by user ${userId}`);
+
+      const { error } = await supabase
+        .from('animal_actions')
+        .insert({
+          user_id: userId,
+          animal_id: animalId,
+          action_type: actionType,
+        });
+
+      if (error) {
+        // Check if it's a duplicate action error
+        if (error.message.includes('duplicate') || error.code === '23505') {
+          console.log(`User ${userId} already recorded ${actionType} for animal ${animalId}`);
+          return false;
+        }
+        console.error(`Error recording ${actionType} action:`, error);
+        return false;
+      }
+
+      console.log(`✅ Successfully recorded ${actionType} action`);
+
+      // If rescued, the trigger will automatically update the animal's is_rescued flag
+      return true;
+    } catch (error: any) {
+      console.error(`Error in recordAction:`, error.message || error);
+      return false;
+    }
+  },
+
+  // Get user statistics (helped and rescued counts)
+  async getUserStats(userId: string): Promise<{ helped: number; rescued: number }> {
+    try {
+      console.log(`Fetching stats for user ${userId}...`);
+
+      // Try using the database function first (most efficient)
+      const { data, error } = await supabase.rpc('get_user_stats', {
+        p_user_id: userId,
+      });
+
+      if (!error && data && data.length > 0) {
+        const stats = data[0];
+        console.log(`User stats from function: helped=${stats.helped_count}, rescued=${stats.rescued_count}`);
+        return {
+          helped: parseInt(stats.helped_count) || 0,
+          rescued: parseInt(stats.rescued_count) || 0,
+        };
+      }
+
+      console.log('Database function not available, falling back to client-side counting...');
+
+      // Fallback: query actions table directly
+      const { data: actions, error: actionsError } = await supabase
+        .from('animal_actions')
+        .select('action_type')
+        .eq('user_id', userId);
+
+      if (actionsError) {
+        console.error('Error fetching user actions:', actionsError);
+        return { helped: 0, rescued: 0 };
+      }
+
+      // Count actions client-side
+      const helped = actions?.filter(a => a.action_type === 'helped').length || 0;
+      const rescued = actions?.filter(a => a.action_type === 'rescued').length || 0;
+
+      console.log(`User stats from client-side count: helped=${helped}, rescued=${rescued}`);
+      return { helped, rescued };
+    } catch (error: any) {
+      console.error('Error in getUserStats:', error.message || error);
+      return { helped: 0, rescued: 0 };
+    }
+  },
+
+  // Get all actions for a specific animal
+  async getAnimalActions(animalId: string): Promise<Array<{
+    id: string;
+    user_id: string;
+    action_type: 'helped' | 'rescued';
+    created_at: string;
+  }>> {
+    try {
+      const { data, error } = await supabase
+        .from('animal_actions')
+        .select('*')
+        .eq('animal_id', animalId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching animal actions:', error);
+        return [];
+      }
+
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getAnimalActions:', error.message || error);
+      return [];
     }
   },
 };

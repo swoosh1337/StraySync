@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { COLORS } from '../styles/theme';
 import {
   View,
   Text,
@@ -118,7 +119,7 @@ const AddCatScreen: React.FC = () => {
         );
         return;
       }
-      
+
       // If location is 0,0, try to get current location
       if (location.latitude === 0 && location.longitude === 0) {
         console.log('No location provided, getting current location');
@@ -136,7 +137,7 @@ const AddCatScreen: React.FC = () => {
         }
       }
     };
-    
+
     initialize();
 
     // Set up keyboard listeners
@@ -157,19 +158,19 @@ const AddCatScreen: React.FC = () => {
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
+
     if (status !== 'granted') {
       Alert.alert('Permission Required', 'Please allow access to your photo library to select an image.');
       return;
     }
-    
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
     });
-    
+
     if (!result.canceled && result.assets && result.assets.length > 0) {
       setImageUri(result.assets[0].uri);
     }
@@ -177,18 +178,18 @@ const AddCatScreen: React.FC = () => {
 
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    
+
     if (status !== 'granted') {
       Alert.alert('Permission Required', 'Please allow access to your camera to take a photo.');
       return;
     }
-    
+
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
     });
-    
+
     if (!result.canceled && result.assets && result.assets.length > 0) {
       setImageUri(result.assets[0].uri);
     }
@@ -410,7 +411,6 @@ const AddCatScreen: React.FC = () => {
                   placeholder="Phone number or email"
                   value={contactInfo}
                   onChangeText={setContactInfo}
-                  keyboardType="email-address"
                 />
                 <Text style={styles.fieldHint}>
                   Provide contact info so people can reach you about adoption
@@ -426,7 +426,7 @@ const AddCatScreen: React.FC = () => {
   // Update the handleSubmit function to include the animal_type
   const handleSubmit = async () => {
     console.log('Submit button pressed');
-    
+
     if (!imageUri) {
       Alert.alert('Error', 'Please take a photo or select an image');
       return;
@@ -447,13 +447,13 @@ const AddCatScreen: React.FC = () => {
         setLoading(false);
         return;
       }
-      
+
       console.log('Using user ID:', userId);
-      
+
       // Use the catService's uploadImage method instead of direct Supabase calls
       console.log('Uploading image using catService...');
       let imageUrl;
-      
+
       try {
         imageUrl = await catService.uploadImage(imageUri, userId);
         console.log('Image uploaded successfully, URL:', imageUrl);
@@ -463,14 +463,14 @@ const AddCatScreen: React.FC = () => {
         setLoading(false);
         return;
       }
-      
+
       if (!imageUrl) {
         console.error('No image URL returned from upload');
         Alert.alert('Upload Error', 'Failed to get image URL. Please try again.');
         setLoading(false);
         return;
       }
-      
+
       // Prepare the cat data with all details
       const catData = {
         user_id: userId,
@@ -492,16 +492,16 @@ const AddCatScreen: React.FC = () => {
         is_adoptable: isAdoptable,
         contact_info: isAdoptable && contactInfo ? contactInfo : null,
       };
-      
+
       console.log('Animal data prepared:', JSON.stringify(catData, null, 2));
-      
+
       // Add the cat to the database
       console.log('Attempting to add cat to database');
       const newCat = await catService.addCat(catData);
-      
+
       if (newCat) {
         console.log('Successfully added animal:', newCat.id);
-        
+
         // Set a flag in AsyncStorage to indicate a refresh is needed
         try {
           console.log('Setting mapNeedsRefresh flag to true');
@@ -510,11 +510,11 @@ const AddCatScreen: React.FC = () => {
         } catch (error) {
           console.error('Failed to set refresh flag:', error);
         }
-        
+
         // Navigate back immediately, then show the alert
         // This ensures we return to the map screen before the alert is shown
         navigation.goBack();
-        
+
         // Short timeout to ensure navigation completes before showing alert
         setTimeout(() => {
           Alert.alert(
@@ -547,14 +547,14 @@ const AddCatScreen: React.FC = () => {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
       >
         <SafeAreaView style={styles.container}>
-          <ScrollView 
+          <ScrollView
             ref={scrollViewRef}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Add New {animalType === 'cat' ? 'Cat' : 'Dog'} Sighting</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => navigation.goBack()}
               >
@@ -567,7 +567,7 @@ const AddCatScreen: React.FC = () => {
               {imageUri ? (
                 <View style={styles.photoPreviewContainer}>
                   <Image source={{ uri: imageUri }} style={styles.photoPreview} />
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.changePhotoButton}
                     onPress={() => setImageUri(null)}
                   >
@@ -577,15 +577,15 @@ const AddCatScreen: React.FC = () => {
               ) : (
                 <View style={styles.photoPlaceholder}>
                   <View style={styles.photoButtonsContainer}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={styles.cameraButton}
                       onPress={takePhoto}
                     >
                       <Ionicons name="camera" size={28} color="#fff" />
                       <Text style={styles.buttonText}>Camera</Text>
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity 
+
+                    <TouchableOpacity
                       style={styles.galleryButton}
                       onPress={pickImage}
                     >
@@ -639,7 +639,7 @@ const AddCatScreen: React.FC = () => {
                   {location.latitude.toFixed(5)}° N, {location.longitude.toFixed(5)}° W
                 </Text>
               </View>
-              
+
               {/* Map with draggable marker */}
               <View style={styles.mapContainer}>
                 <MapView
@@ -929,15 +929,15 @@ const styles = StyleSheet.create({
     borderColor: '#e0e0e0',
   },
   activeOptionButton: {
-    backgroundColor: '#D0F0C0',
-    borderColor: '#2E7D32',
+    backgroundColor: COLORS.activeButton,
+    borderColor: COLORS.activeButton,
   },
   optionButtonText: {
     fontSize: 14,
     color: '#666',
   },
   activeOptionButtonText: {
-    color: '#2E7D32',
+    color: '#fff',
     fontWeight: '600',
   },
   checkboxRow: {

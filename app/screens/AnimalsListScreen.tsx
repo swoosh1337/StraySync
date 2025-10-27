@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,12 +6,13 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
   TextInput,
   SafeAreaView,
   Platform,
   StatusBar,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -20,6 +21,7 @@ import { RootStackParamList, Cat } from '../types';
 import { catService } from '../services/supabase';
 import { locationService } from '../services/location';
 import { useSettings } from '../contexts/SettingsContext';
+import { AnimalCardSkeleton } from '../components/SkeletonLoader';
 
 type AnimalsListScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -27,6 +29,13 @@ type AnimalsListScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 type AnimalFilter = 'all' | 'cats' | 'dogs';
+
+interface AdvancedFilters {
+  adoptable: boolean | null;
+  gender: 'male' | 'female' | 'unknown' | null;
+  healthStatus: 'healthy' | 'injured' | 'sick' | 'unknown' | null;
+  neutered: boolean | null;
+}
 
 const AnimalsListScreen: React.FC = () => {
   const navigation = useNavigation<AnimalsListScreenNavigationProp>();
@@ -37,10 +46,18 @@ const AnimalsListScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [animalFilter, setAnimalFilter] = useState<AnimalFilter>('all');
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilters>({
+    adoptable: null,
+    gender: null,
+    healthStatus: null,
+    neutered: null,
+  });
 
   // Theme colors
   const THEME = {
@@ -113,32 +130,78 @@ const AnimalsListScreen: React.FC = () => {
     fetchAnimals();
   }, [fetchAnimals, animalFilter]);
 
+  // Re-apply filters when advanced filters change
+  useEffect(() => {
+    applySearch(animals, searchQuery);
+  }, [advancedFilters]);
+
   const applySearch = (animalsList: Cat[], query: string) => {
-    if (!query.trim()) {
-      setFilteredAnimals(animalsList);
-      return;
+    let filtered = animalsList;
+
+    // Apply text search
+    if (query.trim()) {
+      const lowerCaseQuery = query.toLowerCase();
+      filtered = filtered.filter(animal => {
+        const description = animal.description?.toLowerCase() || '';
+        const name = animal.name?.toLowerCase() || '';
+        const breed = animal.breed?.toLowerCase() || '';
+        const color = animal.color?.toLowerCase() || '';
+        const type = animal.animal_type?.toLowerCase() || '';
+        const date = new Date(animal.spotted_at).toLocaleDateString();
+
+        return (
+          description.includes(lowerCaseQuery) ||
+          name.includes(lowerCaseQuery) ||
+          breed.includes(lowerCaseQuery) ||
+          color.includes(lowerCaseQuery) ||
+          type.includes(lowerCaseQuery) ||
+          date.includes(lowerCaseQuery)
+        );
+      });
     }
-    
-    const lowerCaseQuery = query.toLowerCase();
-    const filtered = animalsList.filter(animal => {
-      const description = animal.description?.toLowerCase() || '';
-      const type = animal.animal_type?.toLowerCase() || '';
-      const date = new Date(animal.spotted_at).toLocaleDateString();
-      
-      return (
-        description.includes(lowerCaseQuery) ||
-        type.includes(lowerCaseQuery) ||
-        date.includes(lowerCaseQuery)
-      );
-    });
-    
+
+    // Apply advanced filters
+    if (advancedFilters.adoptable !== null) {
+      filtered = filtered.filter(animal => animal.is_adoptable === advancedFilters.adoptable);
+    }
+
+    if (advancedFilters.gender !== null) {
+      filtered = filtered.filter(animal => animal.gender === advancedFilters.gender);
+    }
+
+    if (advancedFilters.healthStatus !== null) {
+      filtered = filtered.filter(animal => animal.health_status === advancedFilters.healthStatus);
+    }
+
+    if (advancedFilters.neutered !== null) {
+      filtered = filtered.filter(animal => animal.is_neutered === advancedFilters.neutered);
+    }
+
     setFilteredAnimals(filtered);
   };
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    applySearch(animals, text);
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    // Debounce search by 300ms
+    searchTimeoutRef.current = setTimeout(() => {
+      applySearch(animals, text);
+    }, 300);
   };
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -147,6 +210,30 @@ const AnimalsListScreen: React.FC = () => {
 
   const handleAnimalPress = (animalId: string) => {
     navigation.navigate('CatDetails', { catId: animalId });
+  };
+
+  const getActiveFilterCount = () => {
+    let count = 0;
+    if (advancedFilters.adoptable !== null) count++;
+    if (advancedFilters.gender !== null) count++;
+    if (advancedFilters.healthStatus !== null) count++;
+    if (advancedFilters.neutered !== null) count++;
+    return count;
+  };
+
+  const clearAllFilters = () => {
+    setAdvancedFilters({
+      adoptable: null,
+      gender: null,
+      healthStatus: null,
+      neutered: null,
+    });
+    setShowFilterModal(false);
+  };
+
+  const applyFiltersAndClose = () => {
+    setShowFilterModal(false);
+    applySearch(animals, searchQuery);
   };
 
   const getTimeAgo = (dateString: string) => {
@@ -262,20 +349,20 @@ const AnimalsListScreen: React.FC = () => {
 
   const renderEmptyList = () => {
     if (loading) return null;
-    
+
     return (
       <View style={styles.emptyContainer}>
         <Ionicons name="paw-outline" size={64} color={THEME.inactive} />
         <Text style={styles.emptyText}>
-          {searchQuery 
-            ? 'No animals match your search' 
-            : userLocation 
+          {searchQuery
+            ? 'No animals match your search'
+            : userLocation
               ? `No animals within ${searchRadius}km`
               : 'No animals found'}
         </Text>
         <Text style={styles.emptySubtext}>
-          {searchQuery 
-            ? 'Try a different search term or filter' 
+          {searchQuery
+            ? 'Try a different search term or filter'
             : userLocation
               ? 'Try increasing the search radius in Settings'
               : 'Animals you add will appear here'}
@@ -284,22 +371,283 @@ const AnimalsListScreen: React.FC = () => {
     );
   };
 
+  const renderFilterModal = () => {
+    return (
+      <Modal
+        visible={showFilterModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFilterModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Filter Animals</Text>
+              <TouchableOpacity onPress={() => setShowFilterModal(false)}>
+                <Ionicons name="close" size={24} color={THEME.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll}>
+              {/* Adoptable Filter */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterLabel}>Adoption Status</Text>
+                <View style={styles.filterOptions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.adoptable === null && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, adoptable: null })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.adoptable === null && styles.filterOptionTextActive,
+                    ]}>Any</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.adoptable === true && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, adoptable: true })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.adoptable === true && styles.filterOptionTextActive,
+                    ]}>Adoptable</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.adoptable === false && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, adoptable: false })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.adoptable === false && styles.filterOptionTextActive,
+                    ]}>Not Adoptable</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Gender Filter */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterLabel}>Gender</Text>
+                <View style={styles.filterOptions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.gender === null && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, gender: null })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.gender === null && styles.filterOptionTextActive,
+                    ]}>Any</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.gender === 'male' && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, gender: 'male' })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.gender === 'male' && styles.filterOptionTextActive,
+                    ]}>Male</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.gender === 'female' && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, gender: 'female' })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.gender === 'female' && styles.filterOptionTextActive,
+                    ]}>Female</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.gender === 'unknown' && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, gender: 'unknown' })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.gender === 'unknown' && styles.filterOptionTextActive,
+                    ]}>Unknown</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Health Status Filter */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterLabel}>Health Status</Text>
+                <View style={styles.filterOptions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.healthStatus === null && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, healthStatus: null })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.healthStatus === null && styles.filterOptionTextActive,
+                    ]}>Any</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.healthStatus === 'healthy' && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, healthStatus: 'healthy' })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.healthStatus === 'healthy' && styles.filterOptionTextActive,
+                    ]}>Healthy</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.healthStatus === 'injured' && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, healthStatus: 'injured' })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.healthStatus === 'injured' && styles.filterOptionTextActive,
+                    ]}>Injured</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.healthStatus === 'sick' && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, healthStatus: 'sick' })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.healthStatus === 'sick' && styles.filterOptionTextActive,
+                    ]}>Sick</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.healthStatus === 'unknown' && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, healthStatus: 'unknown' })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.healthStatus === 'unknown' && styles.filterOptionTextActive,
+                    ]}>Unknown</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Neutered Filter */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterLabel}>Neutered/Spayed</Text>
+                <View style={styles.filterOptions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.neutered === null && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, neutered: null })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.neutered === null && styles.filterOptionTextActive,
+                    ]}>Any</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.neutered === true && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, neutered: true })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.neutered === true && styles.filterOptionTextActive,
+                    ]}>Yes</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterOptionButton,
+                      advancedFilters.neutered === false && styles.filterOptionButtonActive,
+                    ]}
+                    onPress={() => setAdvancedFilters({ ...advancedFilters, neutered: false })}
+                  >
+                    <Text style={[
+                      styles.filterOptionText,
+                      advancedFilters.neutered === false && styles.filterOptionTextActive,
+                    ]}>No</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={clearAllFilters}
+              >
+                <Text style={styles.clearButtonText}>Clear All</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.applyButton}
+                onPress={applyFiltersAndClose}
+              >
+                <Text style={styles.applyButtonText}>Apply Filters</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={THEME.lightText} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search animals..."
-          value={searchQuery}
-          onChangeText={handleSearch}
-          placeholderTextColor={THEME.lightText}
-        />
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => handleSearch('')}>
-            <Ionicons name="close-circle" size={20} color={THEME.lightText} />
-          </TouchableOpacity>
-        ) : null}
+      <View style={styles.searchAndFilterRow}>
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color={THEME.lightText} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by name, breed, color..."
+            value={searchQuery}
+            onChangeText={handleSearch}
+            placeholderTextColor={THEME.lightText}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => handleSearch('')}>
+              <Ionicons name="close-circle" size={20} color={THEME.lightText} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        <TouchableOpacity
+          style={styles.filterIconButton}
+          onPress={() => setShowFilterModal(true)}
+        >
+          <Ionicons name="options-outline" size={24} color={THEME.secondary} />
+          {getActiveFilterCount() > 0 && (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{getActiveFilterCount()}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
       </View>
       
       {renderFilterButtons()}
@@ -314,8 +662,10 @@ const AnimalsListScreen: React.FC = () => {
       )}
       
       {loading && !refreshing ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={THEME.secondary} />
+        <View style={styles.listContent}>
+          {[1, 2, 3, 4, 5].map((index) => (
+            <AnimalCardSkeleton key={index} />
+          ))}
         </View>
       ) : (
         <FlatList
@@ -335,6 +685,8 @@ const AnimalsListScreen: React.FC = () => {
           ListEmptyComponent={renderEmptyList}
         />
       )}
+
+      {renderFilterModal()}
     </SafeAreaView>
   );
 };
@@ -345,12 +697,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
+  searchAndFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    gap: 12,
+  },
   searchContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'white',
     borderRadius: 8,
-    margin: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
     elevation: 2,
@@ -358,6 +717,34 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
+  },
+  filterIconButton: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    position: 'relative',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#FF5722',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  filterBadgeText: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '700',
   },
   searchIcon: {
     marginRight: 8,
@@ -372,10 +759,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+    marginTop: 16,
     marginBottom: 16,
   },
   filterButton: {
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 20,
     backgroundColor: 'white',
@@ -489,6 +877,101 @@ const styles = StyleSheet.create({
     color: '#2E7D32',
     marginLeft: 6,
     fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#212121',
+  },
+  modalScroll: {
+    padding: 20,
+  },
+  filterSection: {
+    marginBottom: 24,
+  },
+  filterLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#212121',
+    marginBottom: 12,
+  },
+  filterOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterOptionButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#F5F5F5',
+  },
+  filterOptionButtonActive: {
+    backgroundColor: '#D0F0C0',
+    borderColor: '#2E7D32',
+  },
+  filterOptionText: {
+    fontSize: 14,
+    color: '#757575',
+    fontWeight: '500',
+  },
+  filterOptionTextActive: {
+    color: '#2E7D32',
+    fontWeight: '600',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  clearButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#757575',
+  },
+  applyButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: '#2E7D32',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'white',
   },
 });
 

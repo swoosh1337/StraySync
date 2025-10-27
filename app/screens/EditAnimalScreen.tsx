@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { COLORS } from '../styles/theme';
 import {
   View,
   Text,
@@ -112,7 +113,17 @@ const EditAnimalScreen: React.FC = () => {
         setContactInfo(animalData.contact_info || '');
 
         // Show details section if any details exist
-        if (animalData.breed || animalData.color || animalData.age || animalData.name) {
+        const hasDetails =
+          animalData.breed ||
+          animalData.color ||
+          animalData.age ||
+          animalData.name ||
+          (animalData.gender && animalData.gender !== 'unknown') ||
+          (animalData.health_status && animalData.health_status !== 'unknown') ||
+          animalData.is_neutered === true ||
+          animalData.is_adoptable === true;
+
+        if (hasDetails) {
           setShowDetails(true);
         }
       } catch (error) {
@@ -617,8 +628,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   activeOptionButton: {
-    backgroundColor: '#2E7D32',
-    borderColor: '#2E7D32',
+    backgroundColor: COLORS.activeButton,
+    borderColor: COLORS.activeButton,
   },
   optionButtonText: {
     fontSize: 14,

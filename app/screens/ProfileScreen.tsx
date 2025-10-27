@@ -20,6 +20,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { catService, profileService } from '../services/supabase';
 import { Cat } from '../types';
 import { RootStackParamList } from '../navigation';
+import { AnimalCardSkeleton } from '../components/SkeletonLoader';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -406,8 +407,10 @@ const ProfileScreen: React.FC = () => {
       </View>
 
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4CAF50" />
+        <View style={styles.listContent}>
+          {[1, 2, 3].map((index) => (
+            <AnimalCardSkeleton key={index} />
+          ))}
         </View>
       ) : myAnimals.length === 0 ? (
         <View style={styles.emptyContainer}>

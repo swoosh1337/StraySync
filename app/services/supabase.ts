@@ -362,10 +362,11 @@ export const catService = {
         .from('animals')
         .select('*')
         .eq('animal_type', 'cat')
+        .or('is_rescued.is.null,is_rescued.eq.false')
         .order('spotted_at', { ascending: false });
       
       if (!animalsError) {
-        console.log(`Found ${animalsData?.length || 0} cats in animals table`);
+        console.log(`Found ${animalsData?.length || 0} cats in animals table (excluding rescued)`);
         return animalsData || [];
       }
       
@@ -391,11 +392,11 @@ export const catService = {
           return [];
         }
         
-        // Filter client-side for cats (either explicitly marked as cats or not marked at all)
+        // Filter client-side for cats (either explicitly marked as cats or not marked at all) and exclude rescued
         const filteredCats = (allData || []).filter(animal => 
-          !animal.animal_type || animal.animal_type === 'cat'
+          (!animal.animal_type || animal.animal_type === 'cat') && !animal.is_rescued
         );
-        console.log(`Found ${filteredCats.length} cats using client-side filtering`);
+        console.log(`Found ${filteredCats.length} cats using client-side filtering (excluding rescued)`);
         return filteredCats;
       }
       
@@ -415,10 +416,11 @@ export const catService = {
         .from('animals')
         .select('*')
         .eq('animal_type', 'dog')
+        .or('is_rescued.is.null,is_rescued.eq.false')
         .order('spotted_at', { ascending: false });
       
       if (!animalsError) {
-        console.log(`Found ${animalsData?.length || 0} dogs in animals table`);
+        console.log(`Found ${animalsData?.length || 0} dogs in animals table (excluding rescued)`);
         return animalsData || [];
       }
       
@@ -444,11 +446,11 @@ export const catService = {
           return [];
         }
         
-        // Filter client-side for dogs
+        // Filter client-side for dogs and exclude rescued
         const filteredDogs = (allData || []).filter(animal => 
-          animal.animal_type === 'dog'
+          animal.animal_type === 'dog' && !animal.is_rescued
         );
-        console.log(`Found ${filteredDogs.length} dogs using client-side filtering`);
+        console.log(`Found ${filteredDogs.length} dogs using client-side filtering (excluding rescued)`);
         return filteredDogs;
       }
       
@@ -1472,6 +1474,13 @@ export const catService = {
       if (updates.is_neutered !== undefined) cleanUpdates.is_neutered = updates.is_neutered;
       if (updates.is_adoptable !== undefined) cleanUpdates.is_adoptable = updates.is_adoptable;
       if (updates.contact_info !== undefined) cleanUpdates.contact_info = updates.contact_info;
+
+      // Validate adoptable animals have contact info
+      if (cleanUpdates.is_adoptable === true && !cleanUpdates.contact_info) {
+        if (__DEV__) {
+          console.warn('[catService] Animal marked as adoptable but no contact_info provided');
+        }
+      }
 
       // Try updating in animals table first
       const { error: animalsError } = await supabase

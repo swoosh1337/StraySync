@@ -84,28 +84,38 @@ const CatDetailsScreen: React.FC = () => {
         setAnimal(animalDetails);
         setEditedDescription(animalDetails.description || '');
 
-        // Debug: Log all animal details
-        console.log('📋 [CatDetails] Full animal data:', JSON.stringify(animalDetails, null, 2));
-        console.log('📋 [CatDetails] Detailed fields check:', {
-          name: animalDetails.name,
-          breed: animalDetails.breed,
-          color: animalDetails.color,
-          age: animalDetails.age,
-          gender: animalDetails.gender,
-          health_status: animalDetails.health_status,
-          is_neutered: animalDetails.is_neutered,
-          is_adoptable: animalDetails.is_adoptable,
-        });
+        // Debug: Log animal details (PII-safe, dev only)
+        if (__DEV__) {
+          // Redact sensitive fields before logging
+          const safeDetails = {
+            id: animalDetails.id,
+            name: (animalDetails as any).name,
+            breed: (animalDetails as any).breed,
+            color: (animalDetails as any).color,
+            age: (animalDetails as any).age,
+            gender: (animalDetails as any).gender,
+            health_status: (animalDetails as any).health_status,
+            is_neutered: (animalDetails as any).is_neutered,
+            is_adoptable: (animalDetails as any).is_adoptable,
+            animal_type: (animalDetails as any).animal_type,
+            description: animalDetails.description?.substring(0, 50) + '...',
+            contact_info: (animalDetails as any).contact_info ? '[REDACTED]' : null,
+            auth_user_id: (animalDetails as any).auth_user_id ? '[REDACTED]' : null,
+          };
+          console.log('[CatDetails] Animal data (PII redacted):', safeDetails);
+        }
 
         // Check if current authenticated user is the owner
         if (user?.id) {
           // Check if user's auth ID matches the animal's auth_user_id
-          const isUserOwner = animalDetails.auth_user_id === user.id;
-          console.log('Ownership check:', {
-            userId: user.id,
-            animalAuthUserId: animalDetails.auth_user_id,
-            isOwner: isUserOwner
-          });
+          const isUserOwner = (animalDetails as any).auth_user_id === user.id;
+          if (__DEV__) {
+            console.log('[CatDetails] Ownership check:', {
+              userId: '[REDACTED]',
+              animalAuthUserId: '[REDACTED]',
+              isOwner: isUserOwner
+            });
+          }
           setIsOwner(isUserOwner);
 
           // Check if user has already helped or rescued this animal

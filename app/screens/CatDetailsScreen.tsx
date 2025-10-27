@@ -22,6 +22,10 @@ import { catService, supabase } from '../services/supabase';
 import { locationService } from '../services/location/locationService';
 import { formatDistanceToNow } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
+import { CommentsSection } from '../components/CommentsSection';
+import { commentService } from '../services/comments';
+import { COLORS } from '../styles/theme';
+import { favoritesService } from '../services/favorites';
 
 type CatDetailsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -47,17 +51,12 @@ const CatDetailsScreen: React.FC = () => {
   const [hasHelped, setHasHelped] = useState(false);
   const [hasRescued, setHasRescued] = useState(false);
   const [recordingAction, setRecordingAction] = useState(false);
+  const [activeTab, setActiveTab] = useState<'details' | 'comments'>('details');
+  const [commentCount, setCommentCount] = useState(0);
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [favoriteCount, setFavoriteCount] = useState(0);
 
-  // Theme colors
-  const THEME = {
-    primary: '#D0F0C0',
-    secondary: '#2E7D32',
-    accent: '#388E3C',
-    inactive: '#90A4AE',
-    danger: '#D32F2F',
-    helped: '#2196F3',
-    rescued: '#FF9800',
-  };
+
 
   useEffect(() => {
     const fetchAnimalDetails = async () => {
@@ -83,6 +82,18 @@ const CatDetailsScreen: React.FC = () => {
 
         setAnimal(animalDetails);
         setEditedDescription(animalDetails.description || '');
+
+        // Load comment count
+        const count = await commentService.getCommentCount(animalId);
+        setCommentCount(count);
+
+        // Load favorite status and count
+        if (user) {
+          const favStatus = await favoritesService.isFavorited(animalId);
+          setIsFavorited(favStatus);
+        }
+        const favCount = await favoritesService.getFavoriteCount(animalId);
+        setFavoriteCount(favCount);
 
         // Debug: Log animal details (PII-safe, dev only)
         if (__DEV__) {
@@ -319,6 +330,21 @@ const CatDetailsScreen: React.FC = () => {
     );
   };
 
+  const handleToggleFavorite = async () => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to favorite animals');
+      return;
+    }
+
+    try {
+      const newStatus = await favoritesService.toggleFavorite(animal.id);
+      setIsFavorited(newStatus);
+      setFavoriteCount(prev => newStatus ? prev + 1 : prev - 1);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update favorite');
+    }
+  };
+
   const handleShare = async () => {
     try {
       const message = `Check out this stray animal I found using the  app! ${animal?.description || ''
@@ -358,7 +384,7 @@ const CatDetailsScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={THEME.secondary} />
+        <ActivityIndicator size="large" color={COLORS.primaryDark} />
         <Text style={styles.loadingText}>Loading animal details...</Text>
       </View>
     );
@@ -367,7 +393,7 @@ const CatDetailsScreen: React.FC = () => {
   if (!animal) {
     return (
       <View style={styles.errorContainer}>
-        <Ionicons name="alert-circle" size={64} color={THEME.danger} />
+        <Ionicons name="alert-circle" size={64} color={COLORS.error} />
         <Text style={styles.errorText}>Animal not found</Text>
         <TouchableOpacity
           style={styles.backButton}
@@ -381,7 +407,10 @@ const CatDetailsScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Animal Image */}
         <View style={styles.imageContainer}>
           <Image
@@ -401,225 +430,280 @@ const CatDetailsScreen: React.FC = () => {
               </Text>
             </View>
           </View>
-        </View>
-
-        {/* Animal Details */}
-        <View style={styles.detailsContainer}>
-          {/* Time and Distance */}
-          <View style={styles.metaInfo}>
-            <View style={styles.metaItem}>
-              <Ionicons name="time-outline" size={18} color={THEME.secondary} />
-              <Text style={styles.metaText}>
-                {formatDate(animal.spotted_at)}
-              </Text>
-            </View>
-            {distance && (
-              <View style={styles.metaItem}>
-                <Ionicons name="location-outline" size={18} color={THEME.secondary} />
-                <Text style={styles.metaText}>{distance}</Text>
+          
+          {/* Favorite Button */}
+          <TouchableOpacity
+            style={styles.favoriteButton}
+            onPress={handleToggleFavorite}
+          >
+            <Ionicons
+              name={isFavorited ? 'heart' : 'heart-outline'}
+              size={28}
+              color={isFavorited ? '#FF6B6B' : '#fff'}
+            />
+            {favoriteCount > 0 && (
+              <View style={styles.favoriteCountBadge}>
+                <Text style={styles.favoriteCountText}>{favoriteCount}</Text>
               </View>
             )}
-          </View>
+          </TouchableOpacity>
+        </View>
 
-          {/* Description */}
-          <View style={styles.descriptionContainer}>
-            <View style={styles.descriptionHeader}>
-              <Text style={styles.descriptionTitle}>Description</Text>
-            </View>
-            <Text style={styles.descriptionText}>
-              {animal.description || 'No description provided.'}
+        {/* Tabs */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'details' && styles.activeTab]}
+            onPress={() => setActiveTab('details')}
+          >
+            <Ionicons
+              name="information-circle-outline"
+              size={20}
+              color={activeTab === 'details' ? '#2E7D32' : '#666'}
+            />
+            <Text style={[styles.tabText, activeTab === 'details' && styles.activeTabText]}>
+              Details
             </Text>
-          </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'comments' && styles.activeTab]}
+            onPress={() => setActiveTab('comments')}
+          >
+            <Ionicons
+              name="chatbubbles-outline"
+              size={20}
+              color={activeTab === 'comments' ? '#2E7D32' : '#666'}
+            />
+            <Text style={[styles.tabText, activeTab === 'comments' && styles.activeTabText]}>
+              Comments {commentCount > 0 && `(${commentCount})`}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Animal Details */}
-          {(animal.name || animal.breed || animal.color || animal.age || animal.gender || animal.health_status || animal.is_neutered || animal.is_adoptable) && (
-            <View style={styles.detailsSection}>
-              <Text style={styles.sectionTitle}>Animal Details</Text>
-              <View style={styles.detailsGrid}>
-                {animal.name && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="pricetag-outline" size={18} color={THEME.secondary} />
-                    <Text style={styles.detailLabel}>Name:</Text>
-                    <Text style={styles.detailValue}>{animal.name}</Text>
-                  </View>
-                )}
-                {animal.breed && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="paw-outline" size={18} color={THEME.secondary} />
-                    <Text style={styles.detailLabel}>Breed:</Text>
-                    <Text style={styles.detailValue}>{animal.breed}</Text>
-                  </View>
-                )}
-                {animal.color && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="color-palette-outline" size={18} color={THEME.secondary} />
-                    <Text style={styles.detailLabel}>Color:</Text>
-                    <Text style={styles.detailValue}>{animal.color}</Text>
-                  </View>
-                )}
-                {animal.age && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="calendar-outline" size={18} color={THEME.secondary} />
-                    <Text style={styles.detailLabel}>Age:</Text>
-                    <Text style={styles.detailValue}>{animal.age}</Text>
-                  </View>
-                )}
-                {animal.gender && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name={animal.gender === 'male' ? 'male' : animal.gender === 'female' ? 'female' : 'help-circle-outline'} size={18} color={THEME.secondary} />
-                    <Text style={styles.detailLabel}>Gender:</Text>
-                    <Text style={styles.detailValue}>{animal.gender.charAt(0).toUpperCase() + animal.gender.slice(1)}</Text>
-                  </View>
-                )}
-                {animal.health_status && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="fitness-outline" size={18} color={THEME.secondary} />
-                    <Text style={styles.detailLabel}>Health:</Text>
-                    <Text style={styles.detailValue}>{animal.health_status.charAt(0).toUpperCase() + animal.health_status.slice(1)}</Text>
-                  </View>
-                )}
-                {animal.is_neutered && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="checkmark-circle" size={18} color={THEME.secondary} />
-                    <Text style={styles.detailValue}>Neutered/Spayed</Text>
-                  </View>
-                )}
+        {/* Tab Content */}
+        {activeTab === 'details' ? (
+          <View style={styles.detailsContainer}>
+            {/* Time and Distance */}
+            <View style={styles.metaInfo}>
+              <View style={styles.metaItem}>
+                <Ionicons name="time-outline" size={18} color={COLORS.primaryDark} />
+                <Text style={styles.metaText}>
+                  {formatDate(animal.spotted_at)}
+                </Text>
               </View>
-            </View>
-          )}
-
-          {/* Adoption Information */}
-          {animal.is_adoptable && (
-            <View style={styles.adoptionCard}>
-              <View style={styles.adoptionHeader}>
-                <Ionicons name="heart" size={24} color="#FF9800" />
-                <Text style={styles.adoptionTitle}>Available for Adoption!</Text>
-              </View>
-              <Text style={styles.adoptionText}>
-                This animal is looking for a loving home.
-              </Text>
-              {animal.contact_info && (
-                <View style={styles.contactRow}>
-                  <Ionicons name="call-outline" size={18} color={THEME.secondary} />
-                  <Text style={styles.contactText}>{animal.contact_info}</Text>
+              {distance && (
+                <View style={styles.metaItem}>
+                  <Ionicons name="location-outline" size={18} color={COLORS.primaryDark} />
+                  <Text style={styles.metaText}>{distance}</Text>
                 </View>
               )}
             </View>
-          )}
 
-          {/* Location Map */}
-          <View style={styles.mapSection}>
-            <Text style={styles.sectionTitle}>Location</Text>
-            <View style={styles.mapContainer}>
-              <MapView
-                ref={mapRef}
-                style={styles.map}
-                initialRegion={{
-                  latitude: animal.latitude,
-                  longitude: animal.longitude,
-                  latitudeDelta: 0.01,
-                  longitudeDelta: 0.01,
-                }}
-                scrollEnabled={false}
-                zoomEnabled={false}
-                rotateEnabled={false}
-              >
-                <Marker
-                  coordinate={{
-                    latitude: animal.latitude,
-                    longitude: animal.longitude,
-                  }}
-                />
-              </MapView>
-              <TouchableOpacity
-                style={styles.viewOnMapButton}
-                onPress={handleViewOnMap}
-              >
-                <Ionicons name="map" size={18} color="#fff" />
-                <Text style={styles.viewOnMapText}>View on Full Map</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Help/Rescue Actions (for all authenticated users) */}
-          {user && !animal.is_rescued && (
-            <View style={styles.actionButtonsContainer}>
-              <Text style={styles.actionTitle}>Did you interact with this animal?</Text>
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.helpButton,
-                    hasHelped && styles.helpButtonActive,
-                    recordingAction && styles.buttonDisabled,
-                  ]}
-                  onPress={handleHelped}
-                  disabled={recordingAction || hasHelped}
-                >
-                  <Ionicons
-                    name={hasHelped ? 'checkmark-circle' : 'hand-left-outline'}
-                    size={22}
-                    color={hasHelped ? '#4CAF50' : '#fff'}
-                  />
-                  <Text style={[styles.helpButtonText, hasHelped && styles.helpButtonTextActive]}>
-                    {hasHelped ? 'Helped ✓' : 'I Helped'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.rescueButton,
-                    hasRescued && styles.rescueButtonActive,
-                    recordingAction && styles.buttonDisabled,
-                  ]}
-                  onPress={handleRescued}
-                  disabled={recordingAction || hasRescued}
-                >
-                  {recordingAction ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name={hasRescued ? 'checkmark-circle' : 'heart-outline'}
-                        size={22}
-                        color={hasRescued ? '#4CAF50' : '#fff'}
-                      />
-                      <Text style={[styles.rescueButtonText, hasRescued && styles.rescueButtonTextActive]}>
-                        {hasRescued ? 'Rescued ✓' : 'I Rescued'}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+            {/* Description */}
+            <View style={styles.descriptionContainer}>
+              <View style={styles.descriptionHeader}>
+                <Text style={styles.descriptionTitle}>Description</Text>
               </View>
-              <Text style={styles.actionHint}>
-                {hasHelped || hasRescued
-                  ? 'Thank you for helping animals in need!'
-                  : 'Let others know you helped or rescued this animal'}
+              <Text style={styles.descriptionText}>
+                {animal.description || 'No description provided.'}
               </Text>
             </View>
-          )}
 
-          {/* Owner actions */}
-          {isOwner && (
-            <View style={styles.ownerActionsContainer}>
-              <TouchableOpacity
-                style={styles.editButton}
-                onPress={handleEditDescription}
-              >
-                <Ionicons name="create-outline" size={22} color="#fff" />
-                <Text style={styles.editButtonText}>Edit</Text>
-              </TouchableOpacity>
+            {/* Animal Details */}
+            {(animal.name || animal.breed || animal.color || animal.age || animal.gender || animal.health_status || animal.is_neutered || animal.is_adoptable) && (
+              <View style={styles.detailsSection}>
+                <Text style={styles.sectionTitle}>Animal Details</Text>
+                <View style={styles.detailsGrid}>
+                  {animal.name && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="pricetag-outline" size={18} color={COLORS.primaryDark} />
+                      <Text style={styles.detailLabel}>Name:</Text>
+                      <Text style={styles.detailValue}>{animal.name}</Text>
+                    </View>
+                  )}
+                  {animal.breed && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="paw-outline" size={18} color={COLORS.primaryDark} />
+                      <Text style={styles.detailLabel}>Breed:</Text>
+                      <Text style={styles.detailValue}>{animal.breed}</Text>
+                    </View>
+                  )}
+                  {animal.color && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="color-palette-outline" size={18} color={COLORS.primaryDark} />
+                      <Text style={styles.detailLabel}>Color:</Text>
+                      <Text style={styles.detailValue}>{animal.color}</Text>
+                    </View>
+                  )}
+                  {animal.age && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="calendar-outline" size={18} color={COLORS.primaryDark} />
+                      <Text style={styles.detailLabel}>Age:</Text>
+                      <Text style={styles.detailValue}>{animal.age}</Text>
+                    </View>
+                  )}
+                  {animal.gender && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name={animal.gender === 'male' ? 'male' : animal.gender === 'female' ? 'female' : 'help-circle-outline'} size={18} color={COLORS.primaryDark} />
+                      <Text style={styles.detailLabel}>Gender:</Text>
+                      <Text style={styles.detailValue}>{animal.gender.charAt(0).toUpperCase() + animal.gender.slice(1)}</Text>
+                    </View>
+                  )}
+                  {animal.health_status && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="fitness-outline" size={18} color={COLORS.primaryDark} />
+                      <Text style={styles.detailLabel}>Health:</Text>
+                      <Text style={styles.detailValue}>{animal.health_status.charAt(0).toUpperCase() + animal.health_status.slice(1)}</Text>
+                    </View>
+                  )}
+                  {animal.is_neutered && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="checkmark-circle" size={18} color={COLORS.primaryDark} />
+                      <Text style={styles.detailValue}>Neutered/Spayed</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
 
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={handleDelete}
-              >
-                <Ionicons name="trash-outline" size={22} color="#fff" />
-                <Text style={styles.deleteButtonText}>Delete</Text>
-              </TouchableOpacity>
+            {/* Adoption Information */}
+            {animal.is_adoptable && (
+              <View style={styles.adoptionCard}>
+                <View style={styles.adoptionHeader}>
+                  <Ionicons name="heart" size={24} color="#FF9800" />
+                  <Text style={styles.adoptionTitle}>Available for Adoption!</Text>
+                </View>
+                <Text style={styles.adoptionText}>
+                  This animal is looking for a loving home.
+                </Text>
+                {animal.contact_info && (
+                  <View style={styles.contactRow}>
+                    <Ionicons name="call-outline" size={18} color={COLORS.primaryDark} />
+                    <Text style={styles.contactText}>{animal.contact_info}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Location Map */}
+            <View style={styles.mapSection}>
+              <Text style={styles.sectionTitle}>Location</Text>
+              <View style={styles.mapContainer}>
+                <MapView
+                  ref={mapRef}
+                  style={styles.map}
+                  initialRegion={{
+                    latitude: animal.latitude,
+                    longitude: animal.longitude,
+                    latitudeDelta: 0.01,
+                    longitudeDelta: 0.01,
+                  }}
+                  scrollEnabled={false}
+                  zoomEnabled={false}
+                  rotateEnabled={false}
+                >
+                  <Marker
+                    coordinate={{
+                      latitude: animal.latitude,
+                      longitude: animal.longitude,
+                    }}
+                  />
+                </MapView>
+                <TouchableOpacity
+                  style={styles.viewOnMapButton}
+                  onPress={handleViewOnMap}
+                >
+                  <Ionicons name="map" size={18} color="#fff" />
+                  <Text style={styles.viewOnMapText}>View on Full Map</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          )}
-        </View>
+
+            {/* Help/Rescue Actions (for all authenticated users) */}
+            {user && !animal.is_rescued && (
+              <View style={styles.actionButtonsContainer}>
+                <Text style={styles.actionTitle}>Did you interact with this animal?</Text>
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.helpButton,
+                      hasHelped && styles.helpButtonActive,
+                      recordingAction && styles.buttonDisabled,
+                    ]}
+                    onPress={handleHelped}
+                    disabled={recordingAction || hasHelped}
+                  >
+                    <Ionicons
+                      name={hasHelped ? 'checkmark-circle' : 'hand-left-outline'}
+                      size={22}
+                      color={hasHelped ? '#4CAF50' : '#fff'}
+                    />
+                    <Text style={[styles.helpButtonText, hasHelped && styles.helpButtonTextActive]}>
+                      {hasHelped ? 'Helped ✓' : 'I Helped'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.rescueButton,
+                      hasRescued && styles.rescueButtonActive,
+                      recordingAction && styles.buttonDisabled,
+                    ]}
+                    onPress={handleRescued}
+                    disabled={recordingAction || hasRescued}
+                  >
+                    {recordingAction ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={hasRescued ? 'checkmark-circle' : 'heart-outline'}
+                          size={22}
+                          color={hasRescued ? '#4CAF50' : '#fff'}
+                        />
+                        <Text style={[styles.rescueButtonText, hasRescued && styles.rescueButtonTextActive]}>
+                          {hasRescued ? 'Rescued ✓' : 'I Rescued'}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.actionHint}>
+                  {hasHelped || hasRescued
+                    ? 'Thank you for helping animals in need!'
+                    : 'Let others know you helped or rescued this animal'}
+                </Text>
+              </View>
+            )}
+
+            {/* Owner actions */}
+            {isOwner && (
+              <View style={styles.ownerActionsContainer}>
+                <TouchableOpacity
+                  style={styles.editButton}
+                  onPress={handleEditDescription}
+                >
+                  <Ionicons name="create-outline" size={22} color="#fff" />
+                  <Text style={styles.editButtonText}>Edit</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={handleDelete}
+                >
+                  <Ionicons name="trash-outline" size={22} color="#fff" />
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        ) : null}
       </ScrollView>
+      
+      {activeTab === 'comments' && (
+        <View style={styles.commentsContainer}>
+          <CommentsSection animalId={animal.id} />
+        </View>
+      )}
 
       {/* Edit Description Modal */}
       <Modal
@@ -761,7 +845,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
-  editButton: {
+  editIconButton: {
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -814,7 +898,6 @@ const styles = StyleSheet.create({
     padding: 16,
     height: 56,
     flex: 1,
-    marginLeft: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -891,10 +974,12 @@ const styles = StyleSheet.create({
   },
   ownerActionsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'stretch',
     marginTop: 16,
     marginBottom: 24,
+    gap: 12,
+    paddingHorizontal: 16,
   },
   editButton: {
     backgroundColor: '#2E7D32',
@@ -905,7 +990,6 @@ const styles = StyleSheet.create({
     padding: 16,
     height: 56,
     flex: 1,
-    marginRight: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1059,6 +1143,77 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#333',
     fontWeight: '500',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: '#2E7D32',
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  activeTabText: {
+    color: '#2E7D32',
+    fontWeight: '600',
+  },
+  commentsContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#F5F5F5',
+  },
+  favoriteButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 25,
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  favoriteCountBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF6B6B',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  favoriteCountText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
 });
 

@@ -44,26 +44,29 @@ export default function App() {
     async function prepare() {
       try {
         console.log('App initialization started');
-        
+
         // Initialize services here
         await withLoading(async () => {
           console.log('Initializing app services...');
-          
+
+          // Initialize notifications
+          await notificationService.initialize();
+
           // Initialize notification service
           await notificationService.initialize();
           console.log('Notification service initialized successfully');
-          
+
           // Check and run cleanup of old animal records
           await cleanupService.checkAndRunCleanup();
           console.log('Cleanup check completed');
-          
+
           // Add any other initialization tasks here
           // For example: load fonts, preload assets, etc.
-          
+
           // Small delay to ensure everything is ready
           await new Promise(resolve => setTimeout(resolve, 500));
         });
-        
+
         console.log('App initialization completed');
       } catch (e) {
         console.warn('Error initializing app:', e);
@@ -95,8 +98,8 @@ export default function App() {
   // Show custom splash screen after native splash screen
   if (!appIsReady || showCustomSplash) {
     return (
-      <CustomSplashScreen 
-        onFinish={appIsReady ? handleCustomSplashComplete : undefined} 
+      <CustomSplashScreen
+        onFinish={appIsReady ? handleCustomSplashComplete : undefined}
       />
     );
   }

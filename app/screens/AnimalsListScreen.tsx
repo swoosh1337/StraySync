@@ -22,6 +22,7 @@ import { catService } from '../services/supabase';
 import { locationService } from '../services/location';
 import { useSettings } from '../contexts/SettingsContext';
 import { AnimalCardSkeleton } from '../components/SkeletonLoader';
+import { cache, CACHE_KEYS } from '../services/cache';
 
 type AnimalsListScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -83,8 +84,21 @@ const AnimalsListScreen: React.FC = () => {
     getUserLocation();
   }, []);
 
-  const fetchAnimals = useCallback(async () => {
+  const fetchAnimals = useCallback(async (forceRefresh = false) => {
     try {
+      // Check cache first (unless force refresh)
+      const cacheKey = CACHE_KEYS.ANIMALS_LIST(animalFilter);
+      
+      if (!forceRefresh) {
+        const cachedData = cache.get<Cat[]>(cacheKey);
+        if (cachedData) {
+          setAnimals(cachedData);
+          applySearch(cachedData, searchQuery);
+          setLoading(false);
+          return;
+        }
+      }
+      
       setLoading(true);
       let fetchedAnimals: Cat[] = [];
       
@@ -109,6 +123,9 @@ const AnimalsListScreen: React.FC = () => {
         });
       }
       
+      // Cache the results (2 minutes TTL for animals list)
+      cache.set(cacheKey, fetchedAnimals, 2 * 60 * 1000);
+      
       setAnimals(fetchedAnimals);
       applySearch(fetchedAnimals, searchQuery);
     } catch (error) {
@@ -119,15 +136,15 @@ const AnimalsListScreen: React.FC = () => {
     }
   }, [animalFilter, searchQuery, userLocation, searchRadius]);
 
-  // Add focus effect to refresh the list when the screen comes into focus
+  // Load from cache on focus, only fetch if cache miss
   useFocusEffect(
     useCallback(() => {
-      fetchAnimals();
+      fetchAnimals(false); // Use cache if available
     }, [fetchAnimals])
   );
 
   useEffect(() => {
-    fetchAnimals();
+    fetchAnimals(false); // Use cache if available
   }, [fetchAnimals, animalFilter]);
 
   // Re-apply filters when advanced filters change
@@ -205,7 +222,7 @@ const AnimalsListScreen: React.FC = () => {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchAnimals();
+    await fetchAnimals(true); // Force refresh, bypass cache
   };
 
   const handleAnimalPress = (animalId: string) => {

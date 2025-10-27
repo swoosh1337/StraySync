@@ -21,6 +21,8 @@ import { catService, profileService } from '../services/supabase';
 import { Cat } from '../types';
 import { RootStackParamList } from '../navigation';
 import { AnimalCardSkeleton } from '../components/SkeletonLoader';
+import { favoritesService } from '../services/favorites';
+import { notificationService } from '../services/notifications';
 
 type ProfileScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -35,14 +37,19 @@ const ANIMAL_EMOJIS = [
 
 const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { user, profile, signOut, refreshProfile } = useAuth();
+  const { user, profile, profileLoading, signOut, refreshProfile } = useAuth();
   const [myAnimals, setMyAnimals] = useState<Cat[]>([]);
+  const [favoriteAnimals, setFavoriteAnimals] = useState<Cat[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'sightings' | 'favorites'>('sightings');
+  const [showRescuedFavorites, setShowRescuedFavorites] = useState(true);
 
-  // Log profile state on every render
-  console.log('🎭 [ProfileScreen] Render - Current profile:', profile);
-  console.log('User ID:', user?.id);
+  // Log profile state on every render (only in DEV)
+  if (__DEV__) {
+    console.log('🎭 [ProfileScreen] Profile:', profile ? 'Loaded' : (profileLoading ? 'Loading...' : 'Not loaded'));
+    console.log('User ID:', user?.id);
+  }
 
   // Stats state
   const [helpedCount, setHelpedCount] = useState(0);
@@ -78,13 +85,15 @@ const ProfileScreen: React.FC = () => {
     }
 
     try {
-      // Fetch both animals and stats in parallel
-      const [animals, stats] = await Promise.all([
+      // Fetch animals, stats, and favorites in parallel
+      const [animals, stats, favorites] = await Promise.all([
         catService.getUserAnimals(user.id),
         catService.getUserStats(user.id),
+        favoritesService.getUserFavorites(),
       ]);
 
       setMyAnimals(animals);
+      setFavoriteAnimals(favorites);
       setHelpedCount(stats.helped);
       setRescuedCount(stats.rescued);
     } catch (error) {
@@ -98,6 +107,23 @@ const ProfileScreen: React.FC = () => {
 
   useEffect(() => {
     fetchMyAnimals();
+  }, [user]);
+
+  // Subscribe to favorite animal updates for notifications
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = notificationService.subscribeToFavoriteUpdates(
+      user.id,
+      (animal) => {
+        // Refresh favorites when an animal is rescued
+        fetchMyAnimals();
+      }
+    );
+
+    return () => {
+      notificationService.unsubscribeFromUpdates(channel);
+    };
   }, [user]);
 
   // Refresh when screen comes into focus
@@ -282,6 +308,7 @@ const ProfileScreen: React.FC = () => {
 
   const renderAnimalItem = ({ item }: { item: Cat }) => {
     const animalType = item.animal_type === 'dog' ? 'Dog' : 'Cat';
+    const isRescued = (item as any).is_rescued || item.status === 'rescued';
     const statusIcon =
       item.status === 'rescued'
         ? 'heart'
@@ -297,28 +324,46 @@ const ProfileScreen: React.FC = () => {
 
     return (
       <TouchableOpacity
-        style={styles.animalCard}
+        style={[styles.animalCard, isRescued && styles.rescuedCard]}
         onPress={() => navigation.navigate('CatDetails', { catId: item.id })}
       >
-        <Image source={{ uri: item.image_url }} style={styles.animalImage} />
-        <View style={styles.animalInfo}>
-          <View style={styles.animalHeader}>
-            <Text style={styles.animalType}>{animalType}</Text>
-            <Ionicons name={statusIcon} size={20} color={statusColor} />
+        <Image
+          source={{ uri: item.image_url }}
+          style={[styles.animalImage, isRescued && styles.rescuedImage]}
+        />
+        {isRescued && (
+          <View style={styles.rescuedBadge}>
+            <Ionicons name="heart" size={14} color="#fff" />
+            <Text style={styles.rescuedBadgeText}>Rescued!</Text>
           </View>
+        )}
+        <View style={styles.animalInfo}>
+          <Text style={styles.animalType}>{animalType}</Text>
           <Text style={styles.animalDescription} numberOfLines={2}>
             {item.description || 'No description'}
           </Text>
           <Text style={styles.animalDate}>
             Spotted: {new Date(item.spotted_at).toLocaleDateString()}
           </Text>
+          {isRescued && (
+            <Text style={styles.rescuedNote}>
+              🎉 This animal has been rescued!
+            </Text>
+          )}
         </View>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleDeleteAnimal(item.id)}
-        >
-          <Ionicons name="trash-outline" size={24} color="#FF5722" />
-        </TouchableOpacity>
+        <View style={styles.animalActions}>
+          <View style={styles.statusIconContainer}>
+            <Ionicons name={statusIcon} size={24} color={statusColor} />
+          </View>
+          {activeTab === 'sightings' && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => handleDeleteAnimal(item.id)}
+            >
+              <Ionicons name="trash-outline" size={24} color="#FF5722" />
+            </TouchableOpacity>
+          )}
+        </View>
       </TouchableOpacity>
     );
   };
@@ -359,7 +404,7 @@ const ProfileScreen: React.FC = () => {
           <View style={styles.profileText}>
             <View style={styles.usernameRow}>
               <Text style={styles.profileName}>
-                {profile?.display_name || 'User'}
+                {profileLoading ? 'Loading...' : (profile?.display_name || 'User')}
               </Text>
               <TouchableOpacity
                 style={styles.editButton}
@@ -401,10 +446,54 @@ const ProfileScreen: React.FC = () => {
         </View>
       </View>
 
-      {/* My Animals List */}
-      <View style={styles.listHeader}>
-        <Text style={styles.listTitle}>My Animal Sightings</Text>
+      {/* Tabs */}
+      <View style={styles.tabsContainer}>
+        <TouchableOpacity
+          style={[styles.profileTab, activeTab === 'sightings' && styles.activeProfileTab]}
+          onPress={() => setActiveTab('sightings')}
+        >
+          <Ionicons
+            name="paw"
+            size={20}
+            color={activeTab === 'sightings' ? '#4CAF50' : '#666'}
+          />
+          <Text style={[styles.profileTabText, activeTab === 'sightings' && styles.activeProfileTabText]}>
+            My Sightings ({myAnimals.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.profileTab, activeTab === 'favorites' && styles.activeProfileTab]}
+          onPress={() => setActiveTab('favorites')}
+        >
+          <Ionicons
+            name="heart"
+            size={20}
+            color={activeTab === 'favorites' ? '#4CAF50' : '#666'}
+          />
+          <Text style={[styles.profileTabText, activeTab === 'favorites' && styles.activeProfileTabText]}>
+            Favorites ({favoriteAnimals.length})
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Filter for rescued animals in favorites */}
+      {activeTab === 'favorites' && favoriteAnimals.length > 0 && (
+        <View style={styles.filterContainer}>
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={() => setShowRescuedFavorites(!showRescuedFavorites)}
+          >
+            <Ionicons
+              name={showRescuedFavorites ? 'eye' : 'eye-off'}
+              size={18}
+              color="#666"
+            />
+            <Text style={styles.filterButtonText}>
+              {showRescuedFavorites ? 'Hide' : 'Show'} Rescued Animals
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.listContent}>
@@ -412,28 +501,65 @@ const ProfileScreen: React.FC = () => {
             <AnimalCardSkeleton key={index} />
           ))}
         </View>
-      ) : myAnimals.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="paw-outline" size={60} color="#ccc" />
-          <Text style={styles.emptyText}>No animal sightings yet</Text>
-          <Text style={styles.emptySubtext}>
-            Start adding animals you've spotted!
-          </Text>
-        </View>
+      ) : activeTab === 'sightings' ? (
+        myAnimals.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="paw-outline" size={60} color="#ccc" />
+            <Text style={styles.emptyText}>No animal sightings yet</Text>
+            <Text style={styles.emptySubtext}>
+              Start adding animals you've spotted!
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={myAnimals}
+            renderItem={renderAnimalItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={['#4CAF50']}
+              />
+            }
+          />
+        )
       ) : (
-        <FlatList
-          data={myAnimals}
-          renderItem={renderAnimalItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              colors={['#4CAF50']}
+        (() => {
+          // Filter favorites based on rescued toggle
+          const filteredFavorites = showRescuedFavorites
+            ? favoriteAnimals
+            : favoriteAnimals.filter(animal => !(animal as any).is_rescued && animal.status !== 'rescued');
+
+          return filteredFavorites.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="heart-outline" size={60} color="#ccc" />
+              <Text style={styles.emptyText}>
+                {favoriteAnimals.length === 0 ? 'No favorites yet' : 'No active favorites'}
+              </Text>
+              <Text style={styles.emptySubtext}>
+                {favoriteAnimals.length === 0
+                  ? 'Tap the heart icon on animals to save them here!'
+                  : 'All your favorited animals have been rescued! 🎉'}
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filteredFavorites}
+              renderItem={renderAnimalItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={handleRefresh}
+                  colors={['#4CAF50']}
+                />
+              }
             />
-          }
-        />
+          );
+        })()
       )}
 
       {/* Username Edit Modal */}
@@ -627,6 +753,7 @@ const styles = StyleSheet.create({
   animalInfo: {
     flex: 1,
     padding: 12,
+    justifyContent: 'center',
   },
   animalHeader: {
     flexDirection: 'row',
@@ -638,6 +765,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
+    marginBottom: 6,
   },
   animalDescription: {
     fontSize: 14,
@@ -648,8 +776,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
   },
+  animalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+  },
+  statusIconContainer: {
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   deleteButton: {
-    padding: 12,
+    padding: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -825,6 +963,89 @@ const styles = StyleSheet.create({
   },
   emojiText: {
     fontSize: 32,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+    marginTop: 16,
+  },
+  profileTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeProfileTab: {
+    borderBottomColor: '#4CAF50',
+  },
+  profileTabText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#666',
+  },
+  activeProfileTabText: {
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  rescuedCard: {
+    borderColor: '#4CAF50',
+    borderWidth: 2,
+    backgroundColor: '#F1F8F4',
+  },
+  rescuedImage: {
+    opacity: 0.8,
+  },
+  rescuedBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+    zIndex: 1,
+  },
+  rescuedBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  rescuedNote: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  filterContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  filterButtonText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
   },
 });
 

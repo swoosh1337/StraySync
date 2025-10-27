@@ -55,12 +55,7 @@ const EditAnimalScreen: React.FC = () => {
   const [contactInfo, setContactInfo] = useState('');
   const [showDetails, setShowDetails] = useState(false);
 
-  const THEME = {
-    primary: '#D0F0C0',
-    secondary: '#2E7D32',
-    accent: '#388E3C',
-    inactive: '#90A4AE',
-  };
+
 
   useEffect(() => {
     const fetchAnimal = async () => {
@@ -193,7 +188,7 @@ const EditAnimalScreen: React.FC = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={THEME.secondary} />
+        <ActivityIndicator size="large" color={COLORS.primaryDark} />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
@@ -243,7 +238,7 @@ const EditAnimalScreen: React.FC = () => {
             <Ionicons
               name={showDetails ? 'chevron-up' : 'chevron-down'}
               size={20}
-              color={THEME.secondary}
+              color={COLORS.primaryDark}
             />
           </TouchableOpacity>
 
@@ -345,7 +340,7 @@ const EditAnimalScreen: React.FC = () => {
                 <Ionicons
                   name={isNeutered ? 'checkbox' : 'square-outline'}
                   size={24}
-                  color={isNeutered ? THEME.secondary : '#666'}
+                  color={isNeutered ? COLORS.primaryDark : '#666'}
                 />
                 <Text style={styles.checkboxLabel}>Neutered/Spayed</Text>
               </TouchableOpacity>
@@ -358,7 +353,7 @@ const EditAnimalScreen: React.FC = () => {
                 <Ionicons
                   name={isAdoptable ? 'checkbox' : 'square-outline'}
                   size={24}
-                  color={isAdoptable ? THEME.secondary : '#666'}
+                  color={isAdoptable ? COLORS.primaryDark : '#666'}
                 />
                 <Text style={styles.checkboxLabel}>Available for Adoption</Text>
               </TouchableOpacity>
@@ -411,7 +406,7 @@ const EditAnimalScreen: React.FC = () => {
             )}
           </View>
           <View style={styles.coordinatesContainer}>
-            <Ionicons name="location-outline" size={16} color={THEME.secondary} />
+            <Ionicons name="location-outline" size={16} color={COLORS.primaryDark} />
             <Text style={styles.coordinates}>
               {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
             </Text>
@@ -425,7 +420,7 @@ const EditAnimalScreen: React.FC = () => {
             <Ionicons
               name={animal?.animal_type === 'dog' ? 'paw' : 'logo-octocat'}
               size={20}
-              color={THEME.secondary}
+              color={COLORS.primaryDark}
             />
             <Text style={styles.infoText}>
               {animal?.animal_type === 'dog' ? 'Dog' : 'Cat'}
@@ -558,7 +553,7 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   saveButton: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: COLORS.primaryDark,
     borderRadius: 12,
     padding: 16,
     flexDirection: 'row',
@@ -572,7 +567,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   saveButtonDisabled: {
-    backgroundColor: '#90A4AE',
+    backgroundColor: COLORS.inactiveButton,
   },
   saveButtonText: {
     color: '#fff',

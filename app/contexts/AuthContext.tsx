@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { Linking, AppState } from 'react-native';
+import { Linking } from 'react-native';
 import { supabase } from '../services/api/supabaseClient';
+import { profileCache } from '../services/profileCache';
 
 // Profile type matching our database schema
 export type UserProfile = {
@@ -18,8 +19,8 @@ type AuthContextType = {
   session: Session | null;
   user: User | null;
   profile: UserProfile | null;
-  profileError: string | null;
-  loading: boolean;
+  profileLoading: boolean;
+  isLoading: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -44,270 +45,239 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  
-  // Use ref to track processed URLs to avoid race conditions
-  const processedUrlsRef = useRef(new Set<string>());
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch user profile from database
-  const fetchProfile = async (userId: string): Promise<void> => {
+  // Track processed URLs to prevent duplicates
+  const processedUrls = React.useRef<Set<string>>(new Set());
+
+  /**
+   * Fetch user profile from database with retry logic
+   * Non-blocking - uses cached profile as fallback
+   */
+  const fetchProfile = async (userId: string, attempt: number = 1): Promise<void> => {
     try {
+      setProfileLoading(true);
+
       if (__DEV__) {
-        console.log('[AuthContext] Fetching profile for user:', userId);
+        console.log(`[AuthContext] Fetching profile for user: ${userId} (attempt ${attempt})`);
       }
 
-      // Add timeout to prevent hanging forever (2s timeout)
-      const fetchPromise = supabase
+      // Load cached profile immediately for instant UI
+      if (attempt === 1) {
+        const cachedProfile = await profileCache.load(userId);
+        if (cachedProfile) {
+          setProfile(cachedProfile);
+          if (__DEV__) {
+            console.log('[AuthContext] Using cached profile while fetching fresh data');
+          }
+        }
+      }
+
+      // Fetch fresh profile from database (no timeout)
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      const timeoutPromise: Promise<never> = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timeout after 2s')), 2000)
-      );
-
-      type FetchResult = Awaited<typeof fetchPromise>;
-      
-      const { data, error } = await Promise.race([
-        fetchPromise,
-        timeoutPromise
-      ]) as FetchResult;
-
       if (error) {
-        // If profile doesn't exist (PGRST116 is "not found" error)
+        // Profile doesn't exist - retry with exponential backoff
         if (error.code === 'PGRST116') {
-          if (__DEV__) {
-            console.log('[AuthContext] Profile not found, waiting for database trigger...');
-          }
-          
-          // Wait a bit for the database trigger to create the profile
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Try fetching again
-          const { data: retryData, error: retryError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .single();
-          
-          if (retryError) {
-            const errorMsg = 'Profile not found after retry. Database trigger may not be working.';
+          const delays = [2000, 5000, 10000, 30000]; // 2s, 5s, 10s, 30s
+          const delay = delays[Math.min(attempt - 1, delays.length - 1)];
+
+          if (attempt <= 4) {
             if (__DEV__) {
-              console.error('[AuthContext]', errorMsg, retryError.message);
+              console.log(`[AuthContext] Profile not found, retrying in ${delay}ms...`);
             }
-            setProfileError(errorMsg);
+            setTimeout(() => fetchProfile(userId, attempt + 1), delay);
+            return;
+          } else {
+            if (__DEV__) {
+              console.error('[AuthContext] Profile not found after 4 attempts. Trigger may not be working.');
+            }
+            setProfileLoading(false);
             return;
           }
-          
-          if (retryData) {
-            if (__DEV__) {
-              console.log('[AuthContext] Profile found after retry');
-            }
-            setProfile(retryData as UserProfile);
-            setProfileError(null);
-          }
-          return;
         }
 
-        // Non-PGRST116 error
-        const errorMsg = `Failed to fetch profile: ${error.message}`;
+        // Other errors - log but don't retry
         if (__DEV__) {
-          console.error('[AuthContext] Error fetching profile:', error.code, error.message);
+          console.error('[AuthContext] Error fetching profile:', error);
         }
-        setProfileError(errorMsg);
+        setProfileLoading(false);
         return;
       }
 
+      // Success - update profile and cache
       if (data) {
+        const profileData = data as UserProfile;
+        setProfile(profileData);
+        await profileCache.save(userId, profileData);
+
         if (__DEV__) {
-          console.log('[AuthContext] Profile fetched successfully');
+          console.log('[AuthContext] Profile fetched and cached successfully');
         }
-        setProfile(data as UserProfile);
-        setProfileError(null);
-      } else {
-        const errorMsg = 'No profile data returned';
-        if (__DEV__) {
-          console.error('[AuthContext]', errorMsg);
-        }
-        setProfileError(errorMsg);
       }
+
+      setProfileLoading(false);
     } catch (error: any) {
-      const errorMsg = error?.message || 'Unknown error fetching profile';
       if (__DEV__) {
-        console.error('[AuthContext] Exception in fetchProfile:', errorMsg);
+        console.error('[AuthContext] Exception in fetchProfile:', error);
       }
-      setProfileError(errorMsg);
+      setProfileLoading(false);
     }
   };
 
-  // Initialize auth state
+  /**
+   * Initialize auth state and set up listeners
+   * Uses official Supabase pattern from documentation
+   */
   useEffect(() => {
-    console.log('Initializing auth state...');
+    if (__DEV__) {
+      console.log('[AuthContext] Initializing auth state...');
+    }
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('Initial session:', session ? 'Found' : 'None');
+      if (__DEV__) {
+        console.log('[AuthContext] Initial session:', session ? 'Found' : 'None');
+      }
+
       setSession(session);
       setUser(session?.user ?? null);
 
+      // Load profile if user is logged in
       if (session?.user) {
         fetchProfile(session.user.id);
       }
 
-      setLoading(false);
+      setIsLoading(false);
     });
 
-    // Listen for auth changes
+    // Listen for auth changes (handles OAuth callbacks automatically)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event);
+        if (__DEV__) {
+          console.log('[AuthContext] Auth state changed:', event);
+        }
 
         setSession(session);
         setUser(session?.user ?? null);
 
+        // Handle profile based on event
         if (session?.user) {
-          // Wrap in try-catch to prevent errors from bubbling up
-          try {
-            await fetchProfile(session.user.id);
-          } catch (error) {
-            console.log('⚠️ [onAuthStateChange] Profile fetch failed, will retry via fallback');
-            // Don't throw - let the fallback mechanism handle it
+          // User signed in or session refreshed
+          if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+            fetchProfile(session.user.id);
           }
         } else {
+          // User signed out
           setProfile(null);
+          await profileCache.clear();
         }
-
-        setLoading(false);
       }
     );
 
-    // Handle deep link when returning from OAuth
-    const handleDeepLink = async (event: { url: string }) => {
-      console.log('🔗 [AuthContext] Deep link received:', event.url);
+    // Handle deep links for OAuth redirects
+    const handleUrl = async ({ url }: { url: string }) => {
+      if (__DEV__) {
+        console.log('[AuthContext] Deep link received:', url.substring(0, 50) + '...');
+      }
 
-      // Prevent processing the same URL twice using ref
-      if (processedUrlsRef.current.has(event.url)) {
-        console.log('⚠️ [AuthContext] URL already processed, ignoring duplicate');
+      // Only process straysync:// URLs with access_token
+      if (!url.startsWith('straysync://') || !url.includes('access_token')) {
         return;
       }
-      processedUrlsRef.current.add(event.url);
 
-      if (event.url.startsWith('straysync://')) {
-        // Extract tokens from URL fragment (after #)
-        const hashIndex = event.url.indexOf('#');
-        if (hashIndex !== -1) {
-          const fragment = event.url.substring(hashIndex + 1);
-          console.log('Fragment:', fragment.substring(0, 50) + '...');
-
-          const params = new URLSearchParams(fragment);
-
-          const accessToken = params.get('access_token');
-          const refreshToken = params.get('refresh_token');
-
-          console.log('Access token present:', !!accessToken);
-          console.log('Refresh token present:', !!refreshToken);
-
-          if (accessToken && refreshToken) {
-            console.log('✅ Setting session from OAuth callback...');
-            console.log('Access token length:', accessToken.length);
-            console.log('Refresh token:', refreshToken);
-
-            try {
-              console.log('Calling supabase.auth.setSession...');
-
-              // Await setSession and let onAuthStateChange handle all state updates
-              const { data, error } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
-
-              if (error) {
-                console.error('❌ Error setting session:', error);
-                console.error('Error message:', error.message);
-              } else {
-                console.log('✅ Session set successfully!');
-                console.log('User ID:', data.user?.id);
-                console.log('User email:', data.user?.email);
-                // onAuthStateChange will handle session/user/profile updates
-              }
-            } catch (err: any) {
-              console.error('❌ Exception calling setSession:', err);
-              console.error('Exception message:', err?.message);
-            }
-          } else {
-            console.error('❌ Missing tokens in OAuth callback');
-            console.log('Access token present:', !!accessToken);
-            console.log('Refresh token present:', !!refreshToken);
-            console.log('Params keys:', Array.from(params.keys()));
-          }
-        } else {
-          console.log('⚠️ No # fragment in URL');
+      // Prevent processing the same URL twice
+      if (processedUrls.current.has(url)) {
+        if (__DEV__) {
+          console.log('[AuthContext] URL already processed, skipping duplicate');
         }
-      } else {
-        console.log('⚠️ URL does not start with straysync://');
+        return;
+      }
+      processedUrls.current.add(url);
+
+      try {
+        // Extract tokens from URL fragment (after #)
+        const hashIndex = url.indexOf('#');
+        if (hashIndex === -1) return;
+
+        const fragment = url.substring(hashIndex + 1);
+        const params = new URLSearchParams(fragment);
+
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+
+        if (!accessToken || !refreshToken) {
+          if (__DEV__) {
+            console.log('[AuthContext] Missing tokens in OAuth callback');
+          }
+          return;
+        }
+
+        if (__DEV__) {
+          console.log('[AuthContext] Setting session from OAuth callback...');
+        }
+
+        // Set session - this will trigger onAuthStateChange
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (error) {
+          console.error('[AuthContext] Error setting session:', error);
+        } else {
+          if (__DEV__) {
+            console.log('[AuthContext] Session set successfully');
+          }
+        }
+      } catch (error) {
+        console.error('[AuthContext] Error processing OAuth callback:', error);
       }
     };
 
-    // Listen for deep links (when app is already running)
-    const linkingSubscription = Linking.addEventListener('url', handleDeepLink);
+    const linkingSubscription = Linking.addEventListener('url', handleUrl);
 
-    // Check if app was opened with a deep link (cold start)
+    // Check for initial URL (cold start with OAuth redirect)
     Linking.getInitialURL().then((url) => {
       if (url) {
-        console.log('🚀 App opened with initial URL:', url);
-        handleDeepLink({ url });
-      }
-    });
-
-    // Handle app coming to foreground (might have missed deep link)
-    const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active') {
-        console.log('📱 App became active, checking for pending deep link...');
-        Linking.getInitialURL().then((url) => {
-          if (url && url.includes('access_token')) {
-            // Don't process the same URL twice using ref
-            if (processedUrlsRef.current.has(url)) {
-              console.log('⚠️ Already processed this OAuth URL, skipping...');
-              return;
-            }
-            console.log('Found pending OAuth URL, processing...');
-            handleDeepLink({ url });
-          }
-        });
+        handleUrl({ url });
       }
     });
 
     return () => {
       subscription.unsubscribe();
       linkingSubscription.remove();
-      appStateSubscription.remove();
     };
   }, []);
 
-  // Sign in with Google
+  /**
+   * Sign in with Google OAuth
+   */
   const signInWithGoogle = async (): Promise<void> => {
     try {
-      console.log('Initiating Google sign-in...');
+      if (__DEV__) {
+        console.log('[AuthContext] Initiating Google sign-in...');
+      }
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: 'straysync://', // Deep link for mobile app
+          redirectTo: 'straysync://',
         },
       });
 
       if (error) {
-        console.error('Google sign-in error:', error);
+        console.error('[AuthContext] Google sign-in error:', error);
         throw error;
       }
 
-      console.log('Google sign-in initiated:', data);
-
-      // Open the OAuth URL in the browser
+      // Open OAuth URL in browser
       if (data?.url) {
-        console.log('Opening OAuth URL:', data.url);
         const supported = await Linking.canOpenURL(data.url);
         if (supported) {
           await Linking.openURL(data.url);
@@ -316,33 +286,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }
     } catch (error) {
-      console.error('Error in signInWithGoogle:', error);
+      console.error('[AuthContext] Error in signInWithGoogle:', error);
       throw error;
     }
   };
 
-  // Sign in with Apple
+  /**
+   * Sign in with Apple OAuth
+   */
   const signInWithApple = async (): Promise<void> => {
     try {
-      console.log('Initiating Apple sign-in...');
+      if (__DEV__) {
+        console.log('[AuthContext] Initiating Apple sign-in...');
+      }
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'apple',
         options: {
-          redirectTo: 'straysync://', // Deep link for mobile app
+          redirectTo: 'straysync://',
         },
       });
 
       if (error) {
-        console.error('Apple sign-in error:', error);
+        console.error('[AuthContext] Apple sign-in error:', error);
         throw error;
       }
 
-      console.log('Apple sign-in initiated:', data);
-
-      // Open the OAuth URL in the browser
+      // Open OAuth URL in browser
       if (data?.url) {
-        console.log('Opening OAuth URL:', data.url);
         const supported = await Linking.canOpenURL(data.url);
         if (supported) {
           await Linking.openURL(data.url);
@@ -351,32 +322,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }
     } catch (error) {
-      console.error('Error in signInWithApple:', error);
+      console.error('[AuthContext] Error in signInWithApple:', error);
       throw error;
     }
   };
 
-  // Sign out
+  /**
+   * Sign out
+   */
   const signOut = async (): Promise<void> => {
     try {
-      console.log('🚪 [AuthContext] Signing out...');
+      if (__DEV__) {
+        console.log('[AuthContext] Signing out...');
+      }
 
       const { error } = await supabase.auth.signOut();
 
       if (error) {
-        console.error('❌ Sign out error:', error);
-        // Continue anyway to clear local state
+        console.error('[AuthContext] Sign out error:', error);
       }
 
-      // Force clear local state
+      // Clear local state and cache
       setSession(null);
       setUser(null);
       setProfile(null);
-      setLoading(false);
+      await profileCache.clear();
 
-      console.log('✅ Signed out successfully, local state cleared');
+      if (__DEV__) {
+        console.log('[AuthContext] Signed out successfully');
+      }
     } catch (error) {
-      console.error('❌ Exception in signOut:', error);
+      console.error('[AuthContext] Exception in signOut:', error);
       // Still clear local state even if error
       setSession(null);
       setUser(null);
@@ -384,18 +360,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  // Refresh profile (useful after updates)
+  /**
+   * Manually refresh profile from database
+   */
   const refreshProfile = async (): Promise<void> => {
-    if (__DEV__) {
-      console.log('[AuthContext] refreshProfile called');
-    }
     if (user) {
-      await fetchProfile(user.id);
       if (__DEV__) {
-        console.log('[AuthContext] refreshProfile complete');
+        console.log('[AuthContext] Manually refreshing profile');
       }
-    } else if (__DEV__) {
-      console.log('[AuthContext] No user found, skipping profile refresh');
+      await fetchProfile(user.id, 1);
     }
   };
 
@@ -403,8 +376,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     session,
     user,
     profile,
-    profileError,
-    loading,
+    profileLoading,
+    isLoading,
     signInWithGoogle,
     signInWithApple,
     signOut,

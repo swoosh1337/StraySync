@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { COLORS } from '../styles/theme';
+import { cache } from '../services/cache';
 import {
   View,
   Text,
@@ -511,6 +512,9 @@ const AddCatScreen: React.FC = () => {
           console.error('Failed to set refresh flag:', error);
         }
 
+        // Invalidate animals cache so lists refresh
+        cache.invalidatePattern('animals:list');
+        
         // Navigate back immediately, then show the alert
         // This ensures we return to the map screen before the alert is shown
         navigation.goBack();

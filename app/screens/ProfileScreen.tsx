@@ -308,7 +308,7 @@ const ProfileScreen: React.FC = () => {
 
   const renderAnimalItem = ({ item }: { item: Cat }) => {
     const animalType = item.animal_type === 'dog' ? 'Dog' : 'Cat';
-    const isRescued = (item as any).is_rescued || item.status === 'rescued';
+    const isRescued = item.is_rescued || item.status === 'rescued';
     const statusIcon =
       item.status === 'rescued'
         ? 'heart'
@@ -530,7 +530,7 @@ const ProfileScreen: React.FC = () => {
           // Filter favorites based on rescued toggle
           const filteredFavorites = showRescuedFavorites
             ? favoriteAnimals
-            : favoriteAnimals.filter(animal => !(animal as any).is_rescued && animal.status !== 'rescued');
+            : favoriteAnimals.filter((animal) => !(animal.is_rescued) && animal.status !== 'rescued');
 
           return filteredFavorites.length === 0 ? (
             <View style={styles.emptyContainer}>

@@ -47,9 +47,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  // Retry timer and mount tracking
+  const retryTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = React.useRef<boolean>(false);
 
-  // Track processed URLs to prevent duplicates
+  // Track processed URLs to prevent duplicates (with simple cap/eviction)
+  const MAX_PROCESSED_URLS = 100;
   const processedUrls = React.useRef<Set<string>>(new Set());
+  const processedOrder = React.useRef<string[]>([]);
 
   /**
    * Fetch user profile from database with retry logic
@@ -65,12 +70,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       // Load cached profile immediately for instant UI
       if (attempt === 1) {
-        const cachedProfile = await profileCache.load(userId);
-        if (cachedProfile) {
-          setProfile(cachedProfile);
-          if (__DEV__) {
-            console.log('[AuthContext] Using cached profile while fetching fresh data');
+        try {
+          const cachedProfile = await profileCache.load(userId);
+          if (cachedProfile) {
+            setProfile(cachedProfile);
+            if (__DEV__) {
+              console.log('[AuthContext] Using cached profile while fetching fresh data');
+            }
           }
+        } catch (err) {
+          console.error('[AuthContext] failed to load cached profile', err);
+          // Do not rethrow so normal fetch flow continues
         }
       }
 
@@ -91,7 +101,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (__DEV__) {
               console.log(`[AuthContext] Profile not found, retrying in ${delay}ms...`);
             }
-            setTimeout(() => fetchProfile(userId, attempt + 1), delay);
+            // Clear any pending retry before scheduling a new one
+            if (retryTimerRef.current) {
+              clearTimeout(retryTimerRef.current);
+              retryTimerRef.current = null;
+            }
+            const expectedUserId = userId;
+            retryTimerRef.current = setTimeout(() => {
+              if (!mountedRef.current) return;
+              const currentUserId = (user ?? null)?.id ?? null;
+              if (currentUserId && currentUserId !== expectedUserId) {
+                if (__DEV__) {
+                  console.log('[AuthContext] Skipping stale profile retry for previous user');
+                }
+                return;
+              }
+              fetchProfile(expectedUserId, attempt + 1);
+            }, delay);
             return;
           } else {
             if (__DEV__) {
@@ -135,6 +161,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
    * Uses official Supabase pattern from documentation
    */
   useEffect(() => {
+    mountedRef.current = true;
     if (__DEV__) {
       console.log('[AuthContext] Initializing auth state...');
     }
@@ -170,12 +197,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (session?.user) {
           // User signed in or session refreshed
           if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+            // Clear pending retry before fetching fresh profile
+            if (retryTimerRef.current) {
+              clearTimeout(retryTimerRef.current);
+              retryTimerRef.current = null;
+            }
             fetchProfile(session.user.id);
           }
         } else {
           // User signed out
           setProfile(null);
           await profileCache.clear();
+          // Clear any pending retry timers when user signs out
+          if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+          }
         }
       }
     );
@@ -198,7 +235,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         return;
       }
+      // Add to processed set with FIFO eviction
       processedUrls.current.add(url);
+      processedOrder.current.push(url);
+      if (processedUrls.current.size > MAX_PROCESSED_URLS) {
+        const oldest = processedOrder.current.shift();
+        if (oldest) {
+          processedUrls.current.delete(oldest);
+        }
+      }
 
       try {
         // Extract tokens from URL fragment (after #)
@@ -250,6 +295,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     });
 
     return () => {
+      mountedRef.current = false;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       subscription.unsubscribe();
       linkingSubscription.remove();
     };
@@ -346,7 +396,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setSession(null);
       setUser(null);
       setProfile(null);
-      await profileCache.clear();
+          await profileCache.clear();
+          // Clear processed URL tracking on sign-out/reset
+          processedUrls.current.clear();
+          processedOrder.current = [];
 
       if (__DEV__) {
         console.log('[AuthContext] Signed out successfully');

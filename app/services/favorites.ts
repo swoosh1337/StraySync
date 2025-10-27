@@ -88,14 +88,56 @@ export const favoritesService = {
 
   // Toggle favorite status
   async toggleFavorite(animalId: string): Promise<boolean> {
-    const isFav = await this.isFavorited(animalId);
-    if (isFav) {
-      await this.removeFavorite(animalId);
-      return false;
-    } else {
-      await this.addFavorite(animalId);
-      return true;
+    // Attempt to atomically toggle with insert/delete semantics and conflict handling
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    // Try to insert first; if unique violation, treat as already favorited
+    try {
+      const { error } = await supabase
+        .from('favorites')
+        .insert({ auth_user_id: user.id, animal_id: animalId });
+
+      if (!error) {
+        if (__DEV__) console.log('[Favorites] Toggled on (inserted)');
+        return true;
+      }
+
+      // If error is due to unique constraint, fall through to delete to toggle off
+      const message = (error as any)?.message || '';
+      const code = (error as any)?.code || '';
+      const isUnique = code === '23505' || /unique/i.test(message);
+      if (!isUnique) {
+        // Unexpected error
+        throw error;
+      }
+    } catch (e: any) {
+      const msg = e?.message || '';
+      const code = e?.code || '';
+      const isUnique = code === '23505' || /unique/i.test(msg);
+      if (!isUnique) {
+        if (__DEV__) console.error('[Favorites] Insert failed:', e);
+        throw e;
+      }
+      // else continue to delete path
     }
+
+    // If we get here, the row likely exists; attempt to delete it
+    const { error: delError, count } = await supabase
+      .from('favorites')
+      .delete({ count: 'exact' })
+      .eq('auth_user_id', user.id)
+      .eq('animal_id', animalId);
+
+    if (delError) {
+      if (__DEV__) console.error('[Favorites] Delete failed during toggle:', delError);
+      throw delError;
+    }
+
+    // If no rows affected, treat as already removed
+    const removed = (count ?? 0) > 0;
+    if (__DEV__) console.log('[Favorites] Toggled off (deleted rows):', count ?? 0);
+    return removed ? false : false;
   },
 
   // Get user's favorite animals

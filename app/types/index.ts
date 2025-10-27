@@ -33,6 +33,8 @@ export type Cat = {
   animal_type?: 'cat' | 'dog';
   status?: 'active' | 'helped' | 'rescued';
   view_count?: number;
+  // Optional rescue flag used by some queries/UI paths
+  is_rescued?: boolean;
 };
 
 // Notification Types

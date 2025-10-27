@@ -49,6 +49,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   
   // Use ref to track processed URLs to avoid race conditions
   const processedUrlsRef = useRef(new Set<string>());
+  const MAX_PROCESSED_URLS = 50; // Keep only most recent URLs to avoid leak
 
   // Fetch user profile from database
   const fetchProfile = async (userId: string): Promise<void> => {
@@ -225,6 +226,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
       processedUrlsRef.current.add(event.url);
+      // Cleanup if the set grows too large
+      if (processedUrlsRef.current.size > MAX_PROCESSED_URLS) {
+        const entries = Array.from(processedUrlsRef.current);
+        processedUrlsRef.current = new Set(entries.slice(-MAX_PROCESSED_URLS));
+      }
 
       if (event.url.startsWith('straysync://')) {
         // Extract tokens from URL fragment (after #)

@@ -127,6 +127,19 @@ export const commentService = {
   // Add a comment
   async addComment(animalId: string, commentText: string): Promise<Comment> {
     try {
+      // Server-side validation before any DB/auth calls
+      const trimmed = (commentText ?? '').trim();
+      if (trimmed.length === 0) {
+        throw new Error('Comment cannot be empty');
+      }
+      if (trimmed.length > 1000) {
+        throw new Error('Comment is too long (max 1000 characters)');
+      }
+
+      // Basic sanitization: strip dangerous angle brackets to avoid HTML/script injection
+      // For stronger needs, wire up a sanitizer util/library in the future
+      const sanitized = trimmed.replace(/[<>]/g, '');
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
@@ -140,7 +153,7 @@ export const commentService = {
         .insert({
           animal_id: animalId,
           auth_user_id: user.id,
-          comment_text: commentText,
+          comment_text: sanitized,
         })
         .select('*')
         .single();

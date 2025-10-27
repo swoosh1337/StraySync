@@ -143,7 +143,7 @@ export const notificationService = {
 
           if (favorite) {
             // Check if status changed to rescued
-            if (payload.new.is_rescued && !payload.old.is_rescued) {
+            if (payload.new.is_rescued && (!payload.old || !payload.old.is_rescued)) {
               callback(payload.new);
               
               // Send local notification

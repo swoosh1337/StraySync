@@ -42,6 +42,18 @@ const EditAnimalScreen: React.FC = () => {
   });
   const [mapRegion, setMapRegion] = useState<Region | null>(null);
 
+  // Additional detail fields
+  const [name, setName] = useState('');
+  const [breed, setBreed] = useState('');
+  const [color, setColor] = useState('');
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState<'male' | 'female' | 'unknown'>('unknown');
+  const [healthStatus, setHealthStatus] = useState<'healthy' | 'injured' | 'sick' | 'unknown'>('unknown');
+  const [isNeutered, setIsNeutered] = useState(false);
+  const [isAdoptable, setIsAdoptable] = useState(false);
+  const [contactInfo, setContactInfo] = useState('');
+  const [showDetails, setShowDetails] = useState(false);
+
   const THEME = {
     primary: '#D0F0C0',
     secondary: '#2E7D32',
@@ -87,6 +99,22 @@ const EditAnimalScreen: React.FC = () => {
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         });
+
+        // Load additional details
+        setName(animalData.name || '');
+        setBreed(animalData.breed || '');
+        setColor(animalData.color || '');
+        setAge(animalData.age || '');
+        setGender(animalData.gender || 'unknown');
+        setHealthStatus(animalData.health_status || 'unknown');
+        setIsNeutered(animalData.is_neutered || false);
+        setIsAdoptable(animalData.is_adoptable || false);
+        setContactInfo(animalData.contact_info || '');
+
+        // Show details section if any details exist
+        if (animalData.breed || animalData.color || animalData.age || animalData.name) {
+          setShowDetails(true);
+        }
       } catch (error) {
         console.error('Error fetching animal:', error);
         Alert.alert('Error', 'Failed to load animal details');
@@ -100,33 +128,44 @@ const EditAnimalScreen: React.FC = () => {
   }, [route.params?.animalId, user]);
 
   const handleSave = async () => {
-    if (!description.trim()) {
-      Alert.alert('Error', 'Please enter a description');
+    if (!description.trim() && !name.trim()) {
+      Alert.alert('Error', 'Please enter a name or description');
       return;
     }
 
     try {
       setSaving(true);
 
-      const success = await catService.updateAnimal(animal.id, {
-        description: description.trim(),
+      const updates = {
+        description: description.trim() || name || 'Animal sighting',
+        name: name.trim() || null,
         latitude: location.latitude,
         longitude: location.longitude,
-      });
+        breed: breed.trim() || null,
+        color: color.trim() || null,
+        age: age.trim() || null,
+        gender: gender !== 'unknown' ? gender : null,
+        health_status: healthStatus !== 'unknown' ? healthStatus : null,
+        is_neutered: isNeutered,
+        is_adoptable: isAdoptable,
+        contact_info: isAdoptable && contactInfo.trim() ? contactInfo.trim() : null,
+      };
+
+      const success = await catService.updateAnimal(animal.id, updates);
 
       if (success) {
-        Alert.alert('Success', 'Animal sighting updated successfully', [
+        Alert.alert('Success', 'Animal details updated successfully', [
           {
             text: 'OK',
             onPress: () => navigation.goBack(),
           },
         ]);
       } else {
-        Alert.alert('Error', 'Failed to update animal sighting');
+        Alert.alert('Error', 'Failed to update animal details');
       }
     } catch (error) {
       console.error('Error updating animal:', error);
-      Alert.alert('Error', 'Failed to update animal sighting');
+      Alert.alert('Error', 'Failed to update animal details');
     } finally {
       setSaving(false);
     }
@@ -156,19 +195,182 @@ const EditAnimalScreen: React.FC = () => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Name Input */}
+        <View style={styles.section}>
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="E.g., Fluffy, Max, etc."
+            placeholderTextColor="#999"
+          />
+        </View>
+
         {/* Description Input */}
         <View style={styles.section}>
-          <Text style={styles.label}>Description *</Text>
+          <Text style={styles.label}>Description</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
             value={description}
             onChangeText={setDescription}
-            placeholder="Describe the animal (color, size, behavior, etc.)"
+            placeholder="Describe the animal..."
             placeholderTextColor="#999"
             multiline
             numberOfLines={4}
             textAlignVertical="top"
           />
+        </View>
+
+        {/* Additional Details */}
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.detailsToggle}
+            onPress={() => setShowDetails(!showDetails)}
+          >
+            <Text style={styles.label}>Additional Details</Text>
+            <Ionicons
+              name={showDetails ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color={THEME.secondary}
+            />
+          </TouchableOpacity>
+
+          {showDetails && (
+            <View style={styles.detailsContainer}>
+              {/* Breed */}
+              <View style={styles.detailField}>
+                <Text style={styles.detailLabel}>Breed</Text>
+                <TextInput
+                  style={styles.input}
+                  value={breed}
+                  onChangeText={setBreed}
+                  placeholder={`e.g., ${animal?.animal_type === 'cat' ? 'Persian, Siamese' : 'Labrador, Beagle'}`}
+                  placeholderTextColor="#999"
+                />
+              </View>
+
+              {/* Color */}
+              <View style={styles.detailField}>
+                <Text style={styles.detailLabel}>Color</Text>
+                <TextInput
+                  style={styles.input}
+                  value={color}
+                  onChangeText={setColor}
+                  placeholder="e.g., Orange, Black & White"
+                  placeholderTextColor="#999"
+                />
+              </View>
+
+              {/* Age */}
+              <View style={styles.detailField}>
+                <Text style={styles.detailLabel}>Approximate Age</Text>
+                <TextInput
+                  style={styles.input}
+                  value={age}
+                  onChangeText={setAge}
+                  placeholder="e.g., Kitten, Adult, 2 years"
+                  placeholderTextColor="#999"
+                />
+              </View>
+
+              {/* Gender */}
+              <View style={styles.detailField}>
+                <Text style={styles.detailLabel}>Gender</Text>
+                <View style={styles.optionButtons}>
+                  {['male', 'female', 'unknown'].map((g) => (
+                    <TouchableOpacity
+                      key={g}
+                      style={[
+                        styles.optionButton,
+                        gender === g && styles.activeOptionButton,
+                      ]}
+                      onPress={() => setGender(g as 'male' | 'female' | 'unknown')}
+                    >
+                      <Text
+                        style={[
+                          styles.optionButtonText,
+                          gender === g && styles.activeOptionButtonText,
+                        ]}
+                      >
+                        {g.charAt(0).toUpperCase() + g.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Health Status */}
+              <View style={styles.detailField}>
+                <Text style={styles.detailLabel}>Health Status</Text>
+                <View style={styles.optionButtons}>
+                  {['healthy', 'injured', 'sick', 'unknown'].map((h) => (
+                    <TouchableOpacity
+                      key={h}
+                      style={[
+                        styles.optionButton,
+                        healthStatus === h && styles.activeOptionButton,
+                      ]}
+                      onPress={() => setHealthStatus(h as 'healthy' | 'injured' | 'sick' | 'unknown')}
+                    >
+                      <Text
+                        style={[
+                          styles.optionButtonText,
+                          healthStatus === h && styles.activeOptionButtonText,
+                        ]}
+                      >
+                        {h.charAt(0).toUpperCase() + h.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Neutered */}
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => setIsNeutered(!isNeutered)}
+              >
+                <Ionicons
+                  name={isNeutered ? 'checkbox' : 'square-outline'}
+                  size={24}
+                  color={isNeutered ? THEME.secondary : '#666'}
+                />
+                <Text style={styles.checkboxLabel}>Neutered/Spayed</Text>
+              </TouchableOpacity>
+
+              {/* Adoptable */}
+              <TouchableOpacity
+                style={styles.checkboxRow}
+                onPress={() => setIsAdoptable(!isAdoptable)}
+              >
+                <Ionicons
+                  name={isAdoptable ? 'checkbox' : 'square-outline'}
+                  size={24}
+                  color={isAdoptable ? THEME.secondary : '#666'}
+                />
+                <Text style={styles.checkboxLabel}>Available for Adoption</Text>
+              </TouchableOpacity>
+
+              {/* Contact Info */}
+              {isAdoptable && (
+                <View style={styles.detailField}>
+                  <Text style={styles.detailLabel}>Contact Information</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={contactInfo}
+                    onChangeText={setContactInfo}
+                    placeholder="Phone number or email"
+                    placeholderTextColor="#999"
+                    keyboardType="email-address"
+                  />
+                  <Text style={styles.fieldHint}>
+                    Provide contact info for adoption inquiries
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Location Map */}
@@ -379,6 +581,68 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
     fontWeight: '500',
+  },
+  detailsToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  detailsContainer: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  detailField: {
+    marginBottom: 16,
+  },
+  detailLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#555',
+    marginBottom: 8,
+  },
+  optionButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    backgroundColor: '#fff',
+  },
+  activeOptionButton: {
+    backgroundColor: '#2E7D32',
+    borderColor: '#2E7D32',
+  },
+  optionButtonText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  activeOptionButtonText: {
+    color: '#fff',
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  checkboxLabel: {
+    fontSize: 16,
+    color: '#333',
+    marginLeft: 12,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 6,
+    fontStyle: 'italic',
   },
 });
 

@@ -1445,16 +1445,33 @@ export const catService = {
       name?: string | null;
       latitude?: number;
       longitude?: number;
+      breed?: string | null;
+      color?: string | null;
+      age?: string | null;
+      gender?: string | null;
+      health_status?: string | null;
+      is_neutered?: boolean;
+      is_adoptable?: boolean;
+      contact_info?: string | null;
     }
   ): Promise<boolean> {
     try {
       console.log(`Updating animal ${animalId}...`, updates);
 
-      // Prepare updates without null/undefined values
+      // Prepare updates - include all fields
       const cleanUpdates: any = {};
       if (updates.description !== undefined) cleanUpdates.description = updates.description;
+      if (updates.name !== undefined) cleanUpdates.name = updates.name;
       if (updates.latitude !== undefined) cleanUpdates.latitude = updates.latitude;
       if (updates.longitude !== undefined) cleanUpdates.longitude = updates.longitude;
+      if (updates.breed !== undefined) cleanUpdates.breed = updates.breed;
+      if (updates.color !== undefined) cleanUpdates.color = updates.color;
+      if (updates.age !== undefined) cleanUpdates.age = updates.age;
+      if (updates.gender !== undefined) cleanUpdates.gender = updates.gender;
+      if (updates.health_status !== undefined) cleanUpdates.health_status = updates.health_status;
+      if (updates.is_neutered !== undefined) cleanUpdates.is_neutered = updates.is_neutered;
+      if (updates.is_adoptable !== undefined) cleanUpdates.is_adoptable = updates.is_adoptable;
+      if (updates.contact_info !== undefined) cleanUpdates.contact_info = updates.contact_info;
 
       // Try updating in animals table first
       const { error: animalsError } = await supabase
@@ -1469,38 +1486,18 @@ export const catService = {
 
       console.log('Error updating in animals table, trying cats table:', animalsError.message);
 
-      // Fall back to cats table - try with name column
-      const updatesWithName = { ...cleanUpdates };
-      if (updates.name !== undefined) updatesWithName.name = updates.name;
-
-      const { error: catsWithNameError } = await supabase
+      // Fall back to cats table
+      const { error: catsError } = await supabase
         .from('cats')
-        .update(updatesWithName)
+        .update(cleanUpdates)
         .eq('id', animalId);
 
-      if (!catsWithNameError) {
-        console.log(`Successfully updated animal ${animalId} in cats table with name`);
+      if (!catsError) {
+        console.log(`Successfully updated animal ${animalId} in cats table`);
         return true;
       }
 
-      // If name column doesn't exist in cats table either, try without it
-      if (catsWithNameError.message?.includes('name')) {
-        console.log('name column not found, updating without it...');
-        const { error } = await supabase
-          .from('cats')
-          .update(cleanUpdates)
-          .eq('id', animalId);
-
-        if (error) {
-          console.error('Error updating animal:', error);
-          return false;
-        }
-
-        console.log(`Successfully updated animal ${animalId} in cats table without name`);
-        return true;
-      }
-
-      console.error('Error updating animal:', catsWithNameError);
+      console.error('Error updating animal in both tables:', catsError);
       return false;
     } catch (error: any) {
       console.error('Error in updateAnimal:', error.message || error);

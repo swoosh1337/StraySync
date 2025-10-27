@@ -55,6 +55,17 @@ const AddCatScreen: React.FC = () => {
   const [animalType, setAnimalType] = useState<'cat' | 'dog'>('cat');
   const [locationName, setLocationName] = useState('Current Location');
 
+  // Additional animal details
+  const [breed, setBreed] = useState('');
+  const [color, setColor] = useState('');
+  const [age, setAge] = useState('');
+  const [gender, setGender] = useState<'male' | 'female' | 'unknown'>('unknown');
+  const [healthStatus, setHealthStatus] = useState<'healthy' | 'injured' | 'sick' | 'unknown'>('unknown');
+  const [isNeutered, setIsNeutered] = useState(false);
+  const [isAdoptable, setIsAdoptable] = useState(false);
+  const [contactInfo, setContactInfo] = useState('');
+  const [showDetails, setShowDetails] = useState(false);
+
   // Theme colors
   const THEME = {
     primary: '#D0F0C0',
@@ -260,6 +271,158 @@ const AddCatScreen: React.FC = () => {
     );
   };
 
+  const renderDetailedInfo = () => {
+    return (
+      <View style={styles.formSection}>
+        <TouchableOpacity
+          style={styles.detailsToggle}
+          onPress={() => setShowDetails(!showDetails)}
+        >
+          <Text style={styles.detailsToggleText}>
+            Additional Details (Optional)
+          </Text>
+          <Ionicons
+            name={showDetails ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={THEME.secondary}
+          />
+        </TouchableOpacity>
+
+        {showDetails && (
+          <View style={styles.detailsContainer}>
+            {/* Breed */}
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Breed</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={`e.g., ${animalType === 'cat' ? 'Persian, Siamese' : 'Labrador, Beagle'}`}
+                value={breed}
+                onChangeText={setBreed}
+              />
+            </View>
+
+            {/* Color */}
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Color</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., Orange, Black & White, Brown"
+                value={color}
+                onChangeText={setColor}
+              />
+            </View>
+
+            {/* Age */}
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Approximate Age</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., Kitten, Adult, Senior, 2 years"
+                value={age}
+                onChangeText={setAge}
+              />
+            </View>
+
+            {/* Gender */}
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Gender</Text>
+              <View style={styles.optionButtons}>
+                {['male', 'female', 'unknown'].map((g) => (
+                  <TouchableOpacity
+                    key={g}
+                    style={[
+                      styles.optionButton,
+                      gender === g && styles.activeOptionButton,
+                    ]}
+                    onPress={() => setGender(g as 'male' | 'female' | 'unknown')}
+                  >
+                    <Text
+                      style={[
+                        styles.optionButtonText,
+                        gender === g && styles.activeOptionButtonText,
+                      ]}
+                    >
+                      {g.charAt(0).toUpperCase() + g.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Health Status */}
+            <View style={styles.detailField}>
+              <Text style={styles.detailLabel}>Health Status</Text>
+              <View style={styles.optionButtons}>
+                {['healthy', 'injured', 'sick', 'unknown'].map((h) => (
+                  <TouchableOpacity
+                    key={h}
+                    style={[
+                      styles.optionButton,
+                      healthStatus === h && styles.activeOptionButton,
+                    ]}
+                    onPress={() => setHealthStatus(h as 'healthy' | 'injured' | 'sick' | 'unknown')}
+                  >
+                    <Text
+                      style={[
+                        styles.optionButtonText,
+                        healthStatus === h && styles.activeOptionButtonText,
+                      ]}
+                    >
+                      {h.charAt(0).toUpperCase() + h.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Neutered */}
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setIsNeutered(!isNeutered)}
+            >
+              <Ionicons
+                name={isNeutered ? 'checkbox' : 'square-outline'}
+                size={24}
+                color={isNeutered ? THEME.secondary : '#666'}
+              />
+              <Text style={styles.checkboxLabel}>Neutered/Spayed</Text>
+            </TouchableOpacity>
+
+            {/* Adoptable */}
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              onPress={() => setIsAdoptable(!isAdoptable)}
+            >
+              <Ionicons
+                name={isAdoptable ? 'checkbox' : 'square-outline'}
+                size={24}
+                color={isAdoptable ? THEME.secondary : '#666'}
+              />
+              <Text style={styles.checkboxLabel}>Available for Adoption</Text>
+            </TouchableOpacity>
+
+            {/* Contact Info (shown only if adoptable) */}
+            {isAdoptable && (
+              <View style={styles.detailField}>
+                <Text style={styles.detailLabel}>Contact Information</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Phone number or email"
+                  value={contactInfo}
+                  onChangeText={setContactInfo}
+                  keyboardType="email-address"
+                />
+                <Text style={styles.fieldHint}>
+                  Provide contact info so people can reach you about adoption
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
+
   // Update the handleSubmit function to include the animal_type
   const handleSubmit = async () => {
     console.log('Submit button pressed');
@@ -308,7 +471,7 @@ const AddCatScreen: React.FC = () => {
         return;
       }
       
-      // Prepare the cat data
+      // Prepare the cat data with all details
       const catData = {
         user_id: userId,
         auth_user_id: userId, // Use authenticated user ID
@@ -318,6 +481,16 @@ const AddCatScreen: React.FC = () => {
         description: description || name || `A stray ${animalType} spotted at this location`,
         spotted_at: new Date().toISOString(),
         animal_type: animalType,
+        // Additional details
+        name: name || null,
+        breed: breed || null,
+        color: color || null,
+        age: age || null,
+        gender: gender !== 'unknown' ? gender : null,
+        health_status: healthStatus !== 'unknown' ? healthStatus : null,
+        is_neutered: isNeutered,
+        is_adoptable: isAdoptable,
+        contact_info: isAdoptable && contactInfo ? contactInfo : null,
       };
       
       console.log('Animal data prepared:', JSON.stringify(catData, null, 2));
@@ -452,6 +625,8 @@ const AddCatScreen: React.FC = () => {
             </View>
 
             {renderAnimalTypeSelector()}
+
+            {renderDetailedInfo()}
 
             <View style={styles.formSection}>
               <Text style={styles.sectionTitle}>Location</Text>
@@ -707,6 +882,80 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 18,
     fontWeight: '600',
+  },
+  detailsToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  detailsToggleText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  detailsContainer: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#fafafa',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  detailField: {
+    marginBottom: 16,
+  },
+  detailLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  optionButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  activeOptionButton: {
+    backgroundColor: '#D0F0C0',
+    borderColor: '#2E7D32',
+  },
+  optionButtonText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  activeOptionButtonText: {
+    color: '#2E7D32',
+    fontWeight: '600',
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 8,
+  },
+  checkboxLabel: {
+    fontSize: 15,
+    color: '#333',
+    marginLeft: 10,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 6,
+    fontStyle: 'italic',
   },
 });
 

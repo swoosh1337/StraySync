@@ -84,6 +84,19 @@ const CatDetailsScreen: React.FC = () => {
         setAnimal(animalDetails);
         setEditedDescription(animalDetails.description || '');
 
+        // Debug: Log all animal details
+        console.log('📋 [CatDetails] Full animal data:', JSON.stringify(animalDetails, null, 2));
+        console.log('📋 [CatDetails] Detailed fields check:', {
+          name: animalDetails.name,
+          breed: animalDetails.breed,
+          color: animalDetails.color,
+          age: animalDetails.age,
+          gender: animalDetails.gender,
+          health_status: animalDetails.health_status,
+          is_neutered: animalDetails.is_neutered,
+          is_adoptable: animalDetails.is_adoptable,
+        });
+
         // Check if current authenticated user is the owner
         if (user?.id) {
           // Check if user's auth ID matches the animal's auth_user_id
@@ -177,7 +190,7 @@ const CatDetailsScreen: React.FC = () => {
   };
 
   const handleEditDescription = () => {
-    setEditModalVisible(true);
+    navigation.navigate('EditAnimal', { animalId: route.params?.catId || '' });
   };
 
   const handleSaveDescription = async () => {
@@ -408,6 +421,82 @@ const CatDetailsScreen: React.FC = () => {
             </Text>
           </View>
 
+          {/* Animal Details */}
+          {(animal.name || animal.breed || animal.color || animal.age || animal.gender || animal.health_status || animal.is_neutered || animal.is_adoptable) && (
+            <View style={styles.detailsSection}>
+              <Text style={styles.sectionTitle}>Animal Details</Text>
+              <View style={styles.detailsGrid}>
+                {animal.name && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="pricetag-outline" size={18} color={THEME.secondary} />
+                    <Text style={styles.detailLabel}>Name:</Text>
+                    <Text style={styles.detailValue}>{animal.name}</Text>
+                  </View>
+                )}
+                {animal.breed && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="paw-outline" size={18} color={THEME.secondary} />
+                    <Text style={styles.detailLabel}>Breed:</Text>
+                    <Text style={styles.detailValue}>{animal.breed}</Text>
+                  </View>
+                )}
+                {animal.color && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="color-palette-outline" size={18} color={THEME.secondary} />
+                    <Text style={styles.detailLabel}>Color:</Text>
+                    <Text style={styles.detailValue}>{animal.color}</Text>
+                  </View>
+                )}
+                {animal.age && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="calendar-outline" size={18} color={THEME.secondary} />
+                    <Text style={styles.detailLabel}>Age:</Text>
+                    <Text style={styles.detailValue}>{animal.age}</Text>
+                  </View>
+                )}
+                {animal.gender && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name={animal.gender === 'male' ? 'male' : animal.gender === 'female' ? 'female' : 'help-circle-outline'} size={18} color={THEME.secondary} />
+                    <Text style={styles.detailLabel}>Gender:</Text>
+                    <Text style={styles.detailValue}>{animal.gender.charAt(0).toUpperCase() + animal.gender.slice(1)}</Text>
+                  </View>
+                )}
+                {animal.health_status && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="fitness-outline" size={18} color={THEME.secondary} />
+                    <Text style={styles.detailLabel}>Health:</Text>
+                    <Text style={styles.detailValue}>{animal.health_status.charAt(0).toUpperCase() + animal.health_status.slice(1)}</Text>
+                  </View>
+                )}
+                {animal.is_neutered && (
+                  <View style={styles.detailRow}>
+                    <Ionicons name="checkmark-circle" size={18} color={THEME.secondary} />
+                    <Text style={styles.detailValue}>Neutered/Spayed</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Adoption Information */}
+          {animal.is_adoptable && (
+            <View style={styles.adoptionCard}>
+              <View style={styles.adoptionHeader}>
+                <Ionicons name="heart" size={24} color="#FF9800" />
+                <Text style={styles.adoptionTitle}>Available for Adoption!</Text>
+              </View>
+              <Text style={styles.adoptionText}>
+                This animal is looking for a loving home.
+              </Text>
+              {animal.contact_info && (
+                <View style={styles.contactRow}>
+                  <Ionicons name="call-outline" size={18} color={THEME.secondary} />
+                  <Text style={styles.contactText}>{animal.contact_info}</Text>
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Location Map */}
           <View style={styles.mapSection}>
             <Text style={styles.sectionTitle}>Location</Text>
@@ -504,7 +593,7 @@ const CatDetailsScreen: React.FC = () => {
             <View style={styles.ownerActionsContainer}>
               <TouchableOpacity
                 style={styles.editButton}
-                onPress={() => navigation.navigate('EditAnimal', { animalId: animal.id })}
+                onPress={handleEditDescription}
               >
                 <Ionicons name="create-outline" size={22} color="#fff" />
                 <Text style={styles.editButtonText}>Edit</Text>
@@ -896,6 +985,70 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 18,
+  },
+  detailsSection: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  detailsGrid: {
+    gap: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#666',
+    minWidth: 60,
+  },
+  detailValue: {
+    fontSize: 15,
+    color: '#333',
+    flex: 1,
+  },
+  adoptionCard: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#FF9800',
+  },
+  adoptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  adoptionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#F57C00',
+  },
+  adoptionText: {
+    fontSize: 15,
+    color: '#666',
+    marginBottom: 12,
+    lineHeight: 22,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  contactText: {
+    fontSize: 15,
+    color: '#333',
+    fontWeight: '500',
   },
 });
 

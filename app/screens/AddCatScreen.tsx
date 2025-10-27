@@ -39,7 +39,7 @@ const AddCatScreen: React.FC = () => {
   const route = useRoute<AddCatScreenRouteProp>();
   const scrollViewRef = useRef<ScrollView>(null);
   const descriptionInputRef = useRef<TextInput>(null);
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -93,10 +93,19 @@ const AddCatScreen: React.FC = () => {
   // Get the current user ID and location
   useEffect(() => {
     const initialize = async () => {
-      // Use authenticated user's ID
+      // Require authenticated user's ID
       if (user?.id) {
         setUserId(user.id);
         console.log('Using authenticated user ID:', user.id);
+      } else {
+        // No user ID - should not happen due to auth check above, but handle it
+        console.error('No user ID available in AddCatScreen');
+        Alert.alert(
+          'Authentication Required',
+          'You must be signed in to add animals.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+        return;
       }
       
       // If location is 0,0, try to get current location
@@ -264,16 +273,26 @@ const AddCatScreen: React.FC = () => {
     console.log(`Starting submission process for ${animalType}`);
 
     try {
-      // Get current user ID
-      const currentUserId = userId || 'anonymous';
-      console.log('Using user ID:', currentUserId);
+      // Require authenticated user ID
+      if (!userId) {
+        console.error('No user ID available for submission');
+        Alert.alert(
+          'Authentication Required',
+          'You must be signed in to add animals.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+        setLoading(false);
+        return;
+      }
+      
+      console.log('Using user ID:', userId);
       
       // Use the catService's uploadImage method instead of direct Supabase calls
       console.log('Uploading image using catService...');
       let imageUrl;
       
       try {
-        imageUrl = await catService.uploadImage(imageUri, currentUserId);
+        imageUrl = await catService.uploadImage(imageUri, userId);
         console.log('Image uploaded successfully, URL:', imageUrl);
       } catch (uploadError) {
         console.error('Error uploading image:', uploadError);
@@ -291,8 +310,8 @@ const AddCatScreen: React.FC = () => {
       
       // Prepare the cat data
       const catData = {
-        user_id: currentUserId,
-        auth_user_id: user?.id, // Add authenticated user ID
+        user_id: userId,
+        auth_user_id: userId, // Use authenticated user ID
         latitude: location.latitude,
         longitude: location.longitude,
         image_url: imageUrl,

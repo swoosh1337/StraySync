@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { Linking, AppState } from 'react-native';
 import { supabase } from '../services/api/supabaseClient';
@@ -18,6 +18,7 @@ type AuthContextType = {
   session: Session | null;
   user: User | null;
   profile: UserProfile | null;
+  profileError: string | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
@@ -43,12 +44,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Use ref to track processed URLs to avoid race conditions
+  const processedUrlsRef = useRef(new Set<string>());
 
   // Fetch user profile from database
   const fetchProfile = async (userId: string): Promise<void> => {
     try {
-      console.log('🔄 [AuthContext] Fetching profile for user:', userId);
+      if (__DEV__) {
+        console.log('[AuthContext] Fetching profile for user:', userId);
+      }
 
       // Add timeout to prevent hanging forever (2s timeout)
       const fetchPromise = supabase
@@ -57,21 +64,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         .eq('id', userId)
         .single();
 
-      const timeoutPromise = new Promise((_, reject) =>
+      const timeoutPromise: Promise<never> = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Profile fetch timeout after 2s')), 2000)
       );
 
+      type FetchResult = Awaited<typeof fetchPromise>;
+      
       const { data, error } = await Promise.race([
         fetchPromise,
         timeoutPromise
-      ]) as any;
+      ]) as FetchResult;
 
       if (error) {
         // If profile doesn't exist (PGRST116 is "not found" error)
         if (error.code === 'PGRST116') {
-          console.log('⚠️ [AuthContext] Profile not found');
-          console.log('This is normal for new users - the database trigger will create it');
-          console.log('Waiting a moment for the trigger to complete...');
+          if (__DEV__) {
+            console.log('[AuthContext] Profile not found, waiting for database trigger...');
+          }
           
           // Wait a bit for the database trigger to create the profile
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -84,38 +93,52 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             .single();
           
           if (retryError) {
-            console.error('❌ [AuthContext] Profile still not found after retry');
-            console.error('The database trigger may not be working correctly');
-            console.error('Error:', retryError.message);
+            const errorMsg = 'Profile not found after retry. Database trigger may not be working.';
+            if (__DEV__) {
+              console.error('[AuthContext]', errorMsg, retryError.message);
+            }
+            setProfileError(errorMsg);
             return;
           }
           
           if (retryData) {
-            console.log('✅ [AuthContext] Profile found after retry');
+            if (__DEV__) {
+              console.log('[AuthContext] Profile found after retry');
+            }
             setProfile(retryData as UserProfile);
+            setProfileError(null);
           }
           return;
         }
 
-        console.error('❌ [AuthContext] Error fetching profile:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
+        // Non-PGRST116 error
+        const errorMsg = `Failed to fetch profile: ${error.message}`;
+        if (__DEV__) {
+          console.error('[AuthContext] Error fetching profile:', error.code, error.message);
+        }
+        setProfileError(errorMsg);
         return;
       }
 
       if (data) {
-        console.log('✅ [AuthContext] Profile fetched successfully');
-        console.log('Profile data:', JSON.stringify(data, null, 2));
-        console.log('Setting profile state...');
+        if (__DEV__) {
+          console.log('[AuthContext] Profile fetched successfully');
+        }
         setProfile(data as UserProfile);
-        console.log('Profile state updated!');
+        setProfileError(null);
       } else {
-        console.error('⚠️ [AuthContext] No data returned from profile fetch');
+        const errorMsg = 'No profile data returned';
+        if (__DEV__) {
+          console.error('[AuthContext]', errorMsg);
+        }
+        setProfileError(errorMsg);
       }
     } catch (error: any) {
-      console.error('❌ [AuthContext] Exception in fetchProfile:', error);
-      console.error('Exception message:', error?.message);
-      console.error('Exception stack:', error?.stack);
+      const errorMsg = error?.message || 'Unknown error fetching profile';
+      if (__DEV__) {
+        console.error('[AuthContext] Exception in fetchProfile:', errorMsg);
+      }
+      setProfileError(errorMsg);
     }
   };
 
@@ -160,19 +183,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     );
 
-    // Track processed URLs at module level
-    const processedUrls = new Set<string>();
-
     // Handle deep link when returning from OAuth
     const handleDeepLink = async (event: { url: string }) => {
       console.log('🔗 [AuthContext] Deep link received:', event.url);
 
-      // Prevent processing the same URL twice
-      if (processedUrls.has(event.url)) {
+      // Prevent processing the same URL twice using ref
+      if (processedUrlsRef.current.has(event.url)) {
         console.log('⚠️ [AuthContext] URL already processed, ignoring duplicate');
         return;
       }
-      processedUrls.add(event.url);
+      processedUrlsRef.current.add(event.url);
 
       if (event.url.startsWith('straysync://')) {
         // Extract tokens from URL fragment (after #)
@@ -197,53 +217,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             try {
               console.log('Calling supabase.auth.setSession...');
 
-              // Don't wait for setSession to complete - it can hang on React Native
-              // Instead, fire it and let the onAuthStateChange listener handle the result
-              supabase.auth.setSession({
+              // Await setSession and let onAuthStateChange handle all state updates
+              const { data, error } = await supabase.auth.setSession({
                 access_token: accessToken,
                 refresh_token: refreshToken,
-              }).then(async ({ data, error }) => {
-                if (error) {
-                  console.error('❌ Error setting session:', error);
-                  console.error('Error message:', error.message);
-                } else {
-                  console.log('✅ Session set successfully in promise!');
-                  console.log('User ID:', data.user?.id);
-                  console.log('User email:', data.user?.email);
-                  
-                  // Manually trigger state update and profile fetch as backup
-                  // in case onAuthStateChange doesn't fire quickly enough
-                  if (data.session && data.user) {
-                    console.log('📦 Manually updating state from setSession promise...');
-                    setSession(data.session);
-                    setUser(data.user);
-                    
-                    // Wait a bit then fetch profile (reduced to 500ms for faster response)
-                    setTimeout(async () => {
-                      console.log('⏰ Timeout: Checking if profile was fetched...');
-                      // Only fetch if profile is still null
-                      const currentProfile = await new Promise<UserProfile | null>((resolve) => {
-                        // This is a bit hacky but we need to check current state
-                        setProfile((prev) => {
-                          resolve(prev);
-                          return prev;
-                        });
-                      });
-                      
-                      if (!currentProfile && data.user) {
-                        console.log('⚠️ Profile still null, fetching manually...');
-                        await fetchProfile(data.user.id);
-                      } else if (currentProfile) {
-                        console.log('✅ Profile already fetched, skipping manual fetch');
-                      }
-                    }, 500);
-                  }
-                }
-              }).catch((err) => {
-                console.error('❌ Exception in setSession promise:', err);
               });
 
-              console.log('setSession called (not waiting for completion)');
+              if (error) {
+                console.error('❌ Error setting session:', error);
+                console.error('Error message:', error.message);
+              } else {
+                console.log('✅ Session set successfully!');
+                console.log('User ID:', data.user?.id);
+                console.log('User email:', data.user?.email);
+                // onAuthStateChange will handle session/user/profile updates
+              }
             } catch (err: any) {
               console.error('❌ Exception calling setSession:', err);
               console.error('Exception message:', err?.message);
@@ -273,22 +261,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     });
 
-    // Track if we've already processed a deep link to avoid duplicates
-    let processedUrl: string | null = null;
-
     // Handle app coming to foreground (might have missed deep link)
     const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         console.log('📱 App became active, checking for pending deep link...');
         Linking.getInitialURL().then((url) => {
           if (url && url.includes('access_token')) {
-            // Don't process the same URL twice
-            if (url === processedUrl) {
+            // Don't process the same URL twice using ref
+            if (processedUrlsRef.current.has(url)) {
               console.log('⚠️ Already processed this OAuth URL, skipping...');
               return;
             }
             console.log('Found pending OAuth URL, processing...');
-            processedUrl = url;
             handleDeepLink({ url });
           }
         });
@@ -402,13 +386,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Refresh profile (useful after updates)
   const refreshProfile = async (): Promise<void> => {
-    console.log('🔄 [AuthContext] refreshProfile called');
+    if (__DEV__) {
+      console.log('[AuthContext] refreshProfile called');
+    }
     if (user) {
-      console.log('User exists, fetching profile for:', user.id);
       await fetchProfile(user.id);
-      console.log('✅ [AuthContext] refreshProfile complete');
-    } else {
-      console.log('⚠️ [AuthContext] No user found, skipping profile refresh');
+      if (__DEV__) {
+        console.log('[AuthContext] refreshProfile complete');
+      }
+    } else if (__DEV__) {
+      console.log('[AuthContext] No user found, skipping profile refresh');
     }
   };
 
@@ -416,6 +403,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     session,
     user,
     profile,
+    profileError,
     loading,
     signInWithGoogle,
     signInWithApple,

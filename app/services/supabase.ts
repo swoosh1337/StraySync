@@ -1618,6 +1618,32 @@ export const catService = {
 
 // Profile service for user profile management
 export const profileService = {
+  // Helper to wait for valid session
+  async waitForValidSession(authUserId: string, maxAttempts = 5, delayMs = 500): Promise<boolean> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const { data, error } = await supabase.auth.getSession();
+      
+      if (data.session && data.session.user.id === authUserId) {
+        if (__DEV__) {
+          console.log('[profileService] Valid session found');
+        }
+        return true;
+      }
+
+      if (attempt < maxAttempts - 1) {
+        if (__DEV__) {
+          console.log(`[profileService] No valid session (attempt ${attempt + 1}/${maxAttempts}), waiting ${delayMs}ms...`);
+        }
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    if (__DEV__) {
+      console.error('[profileService] No valid session after retries');
+    }
+    return false;
+  },
+
   // Update user profile
   async updateProfile(
     authUserId: string,
@@ -1627,68 +1653,40 @@ export const profileService = {
     }
   ): Promise<boolean> {
     try {
-      console.log('=== PROFILE UPDATE START ===');
-      console.log(`User ID: ${authUserId}`);
-      console.log('Updates:', JSON.stringify(updates, null, 2));
-
-      // Check if we have a valid session with retry logic
-      let sessionData = null;
-      let attempts = 0;
-      const maxAttempts = 5; // Increased to 5 attempts
-      const delayMs = 500; // Increased delay to 500ms
-
-      while (attempts < maxAttempts) {
-        const { data, error: sessionError } = await supabase.auth.getSession();
-        
-        if (data.session) {
-          sessionData = data;
-          break;
-        }
-
-        attempts++;
-        if (attempts < maxAttempts) {
-          console.log(`⚠️ No session found (attempt ${attempts}/${maxAttempts}), waiting ${delayMs}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        }
+      if (__DEV__) {
+        console.log('[profileService] Update profile for user:', authUserId);
       }
 
-      console.log('Current session:', sessionData?.session ? 'EXISTS' : 'NULL');
-      console.log('Session user ID:', sessionData?.session?.user?.id);
-      console.log('Matches target user?', sessionData?.session?.user?.id === authUserId);
-
-      if (!sessionData?.session) {
-        console.error('❌ No active session after retries! Cannot update profile.');
-        console.error('This usually means the OAuth session was not properly established.');
-        console.error('Please wait a moment for the session to be established, then try again.');
-        return false;
-      }
-
-      if (sessionData.session.user.id !== authUserId) {
-        console.error('❌ Session user ID does not match target user ID!');
-        console.error(`Session: ${sessionData.session.user.id}, Target: ${authUserId}`);
+      // Wait for valid session before proceeding
+      const hasValidSession = await this.waitForValidSession(authUserId);
+      
+      if (!hasValidSession) {
+        if (__DEV__) {
+          console.error('[profileService] Cannot update profile: no valid session');
+        }
         return false;
       }
 
       // Try update with .select() to get the updated row back
-      const { data, error, status, statusText } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update(updates)
         .eq('id', authUserId)
         .select()
         .single();
 
-      console.log('Update status:', status, statusText);
-      console.log('Updated data:', data);
-
       if (error) {
-        console.error('❌ Error updating profile:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
+        if (__DEV__) {
+          console.error('[profileService] Error updating profile:', error.message);
+        }
         return false;
       }
 
       // If we got data back, the update was successful
       if (!data) {
-        console.error('⚠️ Update returned no data - this should not happen');
+        if (__DEV__) {
+          console.error('[profileService] Update returned no data');
+        }
 
         // Try a direct test query to see if the update actually worked
         const { data: testData, error: testError } = await supabase
@@ -1698,29 +1696,38 @@ export const profileService = {
           .single();
 
         if (testError) {
-          console.error('❌ Cannot read profile after update:', testError);
-          return false;
-        } else {
-          console.log('✅ Profile after update:', testData);
-          // Check if the update actually applied
-          const updateApplied = Object.keys(updates).every(
-            key => testData[key as keyof typeof updates] === updates[key as keyof typeof updates]
-          );
-          if (updateApplied) {
-            console.log('✅ Update was actually successful (verified via read)');
-            return true;
-          } else {
-            console.error('❌ Update did not apply');
-            return false;
+          if (__DEV__) {
+            console.error('[profileService] Cannot read profile after update:', testError.message);
           }
+          return false;
         }
+        
+        // Check if the update actually applied
+        const updateApplied = Object.keys(updates).every(
+          key => testData[key as keyof typeof updates] === updates[key as keyof typeof updates]
+        );
+        
+        if (updateApplied) {
+          if (__DEV__) {
+            console.log('[profileService] Update verified via read');
+          }
+          return true;
+        }
+        
+        if (__DEV__) {
+          console.error('[profileService] Update did not apply');
+        }
+        return false;
       }
 
-      console.log('✅ Profile update successful!');
-      console.log('=== PROFILE UPDATE END ===');
+      if (__DEV__) {
+        console.log('[profileService] Profile update successful');
+      }
       return true;
     } catch (error: any) {
-      console.error('❌ Exception in updateProfile:', error.message || error);
+      if (__DEV__) {
+        console.error('[profileService] Exception in updateProfile:', error.message || error);
+      }
       return false;
     }
   },

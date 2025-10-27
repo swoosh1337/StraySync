@@ -108,12 +108,12 @@ const CatDetailsScreen: React.FC = () => {
         } else {
           setIsOwner(false);
         }
-        
+
         // Get current location for distance calculation
         const location = await locationService.getCurrentLocation();
         if (location) {
           setCurrentLocation(location);
-          
+
           // Calculate distance - note that calculateDistance returns distance in kilometers
           const distanceInKm = locationService.calculateDistance(
             location.latitude,
@@ -121,10 +121,10 @@ const CatDetailsScreen: React.FC = () => {
             animalDetails.latitude,
             animalDetails.longitude
           );
-          
+
           // Convert to meters for display if less than 1 km
           const distanceInMeters = distanceInKm * 1000;
-          
+
           if (distanceInMeters < 1000) {
             setDistance(`${Math.round(distanceInMeters)} meters away`);
           } else {
@@ -156,7 +156,7 @@ const CatDetailsScreen: React.FC = () => {
               setLoading(true);
               const animalId = route.params?.catId || '';
               if (!animalId) return;
-              
+
               const success = await catService.deleteCat(animalId);
               if (success) {
                 Alert.alert('Success', 'Animal sighting deleted successfully');
@@ -185,12 +185,12 @@ const CatDetailsScreen: React.FC = () => {
       setSavingDescription(true);
       const animalId = route.params?.catId || '';
       if (!animalId) return;
-      
+
       const success = await catService.updateCatDescription(
         animalId,
         editedDescription
       );
-      
+
       if (success) {
         setAnimal({ ...animal, description: editedDescription });
         setEditModalVisible(false);
@@ -298,9 +298,8 @@ const CatDetailsScreen: React.FC = () => {
 
   const handleShare = async () => {
     try {
-      const message = `Check out this stray animal I found using the  app! ${
-        animal?.description || ''
-      }`;
+      const message = `Check out this stray animal I found using the  app! ${animal?.description || ''
+        }`;
 
       await Share.share({
         message,
@@ -433,7 +432,7 @@ const CatDetailsScreen: React.FC = () => {
                   }}
                 />
               </MapView>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.viewOnMapButton}
                 onPress={handleViewOnMap}
               >
@@ -443,8 +442,8 @@ const CatDetailsScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Help/Rescue Actions (for non-owners and authenticated users) */}
-          {!isOwner && user && (
+          {/* Help/Rescue Actions (for all authenticated users) */}
+          {user && !animal.is_rescued && (
             <View style={styles.actionButtonsContainer}>
               <Text style={styles.actionTitle}>Did you interact with this animal?</Text>
               <View style={styles.actionButtons}>

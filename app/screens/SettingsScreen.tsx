@@ -116,31 +116,7 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleCleanupOldRecords = async () => {
-    Alert.alert(
-      'Clean Up Old Records',
-      'This will delete all animal sightings older than 2 weeks. This action cannot be undone. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clean Up',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const deletedCount = await cleanupService.manualCleanup();
-              Alert.alert(
-                'Cleanup Complete',
-                `Successfully removed ${deletedCount} old animal sighting${deletedCount !== 1 ? 's' : ''}.`
-              );
-            } catch (error) {
-              console.error('Error during cleanup:', error);
-              Alert.alert('Error', 'Failed to clean up old records. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
+
 
   // Add these functions to handle button presses
   const handleSupportPress = () => {
@@ -154,7 +130,7 @@ const SettingsScreen: React.FC = () => {
 
     // Show an alert with options
     Alert.alert(
-      'Support Stray Animalsr',
+      'Support Stray Animals',
       'Choose an organization to donate to:',
       [
         ...supportOptions.map(option => ({

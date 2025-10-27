@@ -4,10 +4,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
@@ -163,10 +163,25 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
         )}
 
         {/* Privacy notice */}
-        <Text style={styles.privacyText}>
-          By signing in, you agree to our Terms of Service and Privacy Policy.
-          We'll never post without your permission.
-        </Text>
+        <View style={styles.privacyContainer}>
+          <Text style={styles.privacyText}>
+            By signing in, you agree to our{' '}
+            <Text
+              style={styles.privacyLink}
+              onPress={() => Linking.openURL('https://straysync.app/terms')}
+            >
+              Terms of Service
+            </Text>
+            {' '}and{' '}
+            <Text
+              style={styles.privacyLink}
+              onPress={() => Linking.openURL('https://straysync.app/privacy')}
+            >
+              Privacy Policy
+            </Text>
+            . We'll never post without your permission.
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -249,13 +264,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textDecorationLine: 'underline',
   },
+  privacyContainer: {
+    marginTop: 32,
+    maxWidth: 320,
+  },
   privacyText: {
     fontSize: 12,
     color: '#9E9E9E',
     textAlign: 'center',
-    marginTop: 32,
     lineHeight: 18,
-    maxWidth: 320,
+  },
+  privacyLink: {
+    color: '#2E7D32',
+    textDecorationLine: 'underline',
   },
 });
 

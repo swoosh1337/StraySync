@@ -203,9 +203,6 @@ const ProfileScreen: React.FC = () => {
       setSavingUsername(true);
       console.log('Calling profileService.updateProfile...');
 
-      // Add a small delay to ensure session is fully established
-      await new Promise(resolve => setTimeout(resolve, 100));
-
       const success = await profileService.updateProfile(user.id, {
         display_name: trimmedUsername,
       });
@@ -250,9 +247,6 @@ const ProfileScreen: React.FC = () => {
 
     try {
       console.log('Calling profileService.updateProfile...');
-
-      // Add a small delay to ensure session is fully established
-      await new Promise(resolve => setTimeout(resolve, 100));
 
       const success = await profileService.updateProfile(user.id, {
         avatar_url: emoji,

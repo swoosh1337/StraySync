@@ -1,5 +1,9 @@
 import { supabase } from './api/supabaseClient';
 import { Alert } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+
+// Free tier daily analysis limit (kept in one place)
+export const FREE_TIER_DAILY_LIMIT = 30;
 
 export interface AIAnalysisResult {
   animalType: 'cat' | 'dog' | 'unknown';
@@ -34,21 +38,13 @@ export const aiAnalysisService = {
         console.log('[AI] Analyzing image:', imageUri.substring(0, 50) + '...');
       }
 
-      // Convert local file to base64 if needed
+      // Convert local file to base64 if needed (React Native)
       let imageBase64: string | undefined;
       if (imageUri.startsWith('file://')) {
         try {
-          const response = await fetch(imageUri);
-          const blob = await response.blob();
-          const reader = new FileReader();
-          
-          imageBase64 = await new Promise((resolve, reject) => {
-            reader.onloadend = () => {
-              const base64 = (reader.result as string).split(',')[1];
-              resolve(base64);
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
+          // FileSystem can read the file:// URI directly
+          imageBase64 = await FileSystem.readAsStringAsync(imageUri, {
+            encoding: FileSystem.EncodingType.Base64,
           });
         } catch (conversionError) {
           console.error('[AI] Failed to convert image to base64:', conversionError);
@@ -106,8 +102,9 @@ export const aiAnalysisService = {
         analysis: data.analysis,
         usage: data.usage,
       };
-    } catch (error: any) {
-      console.error('[AI] Analysis error:', error);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('[AI] Analysis error:', msg);
       
       // Show user-friendly error
       Alert.alert(
@@ -142,10 +139,11 @@ export const aiAnalysisService = {
       return {
         totalRequests: data.total_requests || 0,
         requestsToday: data.requests_today || 0,
-        remaining: 30 - (data.requests_today || 0), // Assuming free tier
+        remaining: FREE_TIER_DAILY_LIMIT - (data.requests_today || 0), // Assuming free tier
       };
-    } catch (error) {
-      console.error('[AI] Stats error:', error);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('[AI] Stats error:', msg);
       return null;
     }
   },

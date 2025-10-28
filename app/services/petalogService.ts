@@ -7,6 +7,19 @@ import {
 } from '../types/petalog';
 
 const STORAGE_KEY = '@straysync_petalog_collection';
+const SAVE_DEBOUNCE_MS = 300;
+
+// Internal debounced save state
+let pendingSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let latestSerialized: string | null = null;
+
+async function flushSave() {
+  if (!latestSerialized) return;
+  await AsyncStorage.setItem(STORAGE_KEY, latestSerialized);
+  if (__DEV__) {
+    console.log('[PetALog] Collection saved (flush)');
+  }
+}
 
 /**
  * Pet-a-log Service
@@ -59,16 +72,36 @@ export const petalogService = {
    */
   async saveCollection(collection: PetALogCollection): Promise<void> {
     try {
-      const data = JSON.stringify(collection);
-      await AsyncStorage.setItem(STORAGE_KEY, data);
+      latestSerialized = JSON.stringify(collection);
+
+      // Coalesce rapid saves with debounce
+      if (pendingSaveTimer) {
+        clearTimeout(pendingSaveTimer);
+      }
+      pendingSaveTimer = setTimeout(async () => {
+        try {
+          await flushSave();
+        } finally {
+          pendingSaveTimer = null;
+        }
+      }, SAVE_DEBOUNCE_MS);
 
       if (__DEV__) {
-        console.log('[PetALog] Collection saved successfully');
+        console.log('[PetALog] Save scheduled');
       }
     } catch (error) {
-      console.error('[PetALog] Error saving collection:', error);
+      console.error('[PetALog] Error scheduling save:', error);
       throw error;
     }
+  },
+
+  // Force immediate persistence of the latest state
+  async flushNow(): Promise<void> {
+    if (pendingSaveTimer) {
+      clearTimeout(pendingSaveTimer);
+      pendingSaveTimer = null;
+    }
+    await flushSave();
   },
 
   /**
@@ -78,14 +111,18 @@ export const petalogService = {
     collection: PetALogCollection,
     sticker: AnimalSticker
   ): Promise<PetALogCollection> {
-    const updatedCollection = { ...collection };
-    const currentPage = updatedCollection.pages[collection.currentPageIndex];
+    const pageIndex = collection.currentPageIndex;
+    const oldPage = collection.pages[pageIndex];
+    const newPage: CollectionPage = {
+      ...oldPage,
+      stickers: [...oldPage.stickers, sticker],
+      updatedAt: new Date(),
+    };
+    const newPages = collection.pages.map((p, i) => (i === pageIndex ? newPage : p));
+    const newCollection: PetALogCollection = { ...collection, pages: newPages };
 
-    currentPage.stickers.push(sticker);
-    currentPage.updatedAt = new Date();
-
-    await this.saveCollection(updatedCollection);
-    return updatedCollection;
+    await this.saveCollection(newCollection);
+    return newCollection;
   },
 
   /**
@@ -96,20 +133,21 @@ export const petalogService = {
     stickerId: string,
     updates: Partial<AnimalSticker>
   ): Promise<PetALogCollection> {
-    const updatedCollection = { ...collection };
-    const currentPage = updatedCollection.pages[collection.currentPageIndex];
+    const pageIndex = collection.currentPageIndex;
+    const oldPage = collection.pages[pageIndex];
+    const newStickers = oldPage.stickers.map((s) =>
+      s.id === stickerId ? { ...s, ...updates } : s
+    );
+    const newPage: CollectionPage = {
+      ...oldPage,
+      stickers: newStickers,
+      updatedAt: new Date(),
+    };
+    const newPages = collection.pages.map((p, i) => (i === pageIndex ? newPage : p));
+    const newCollection: PetALogCollection = { ...collection, pages: newPages };
 
-    const stickerIndex = currentPage.stickers.findIndex(s => s.id === stickerId);
-    if (stickerIndex !== -1) {
-      currentPage.stickers[stickerIndex] = {
-        ...currentPage.stickers[stickerIndex],
-        ...updates,
-      };
-      currentPage.updatedAt = new Date();
-    }
-
-    await this.saveCollection(updatedCollection);
-    return updatedCollection;
+    await this.saveCollection(newCollection);
+    return newCollection;
   },
 
   /**
@@ -119,14 +157,18 @@ export const petalogService = {
     collection: PetALogCollection,
     stickerId: string
   ): Promise<PetALogCollection> {
-    const updatedCollection = { ...collection };
-    const currentPage = updatedCollection.pages[collection.currentPageIndex];
+    const pageIndex = collection.currentPageIndex;
+    const oldPage = collection.pages[pageIndex];
+    const newPage: CollectionPage = {
+      ...oldPage,
+      stickers: oldPage.stickers.filter((s) => s.id !== stickerId),
+      updatedAt: new Date(),
+    };
+    const newPages = collection.pages.map((p, i) => (i === pageIndex ? newPage : p));
+    const newCollection: PetALogCollection = { ...collection, pages: newPages };
 
-    currentPage.stickers = currentPage.stickers.filter(s => s.id !== stickerId);
-    currentPage.updatedAt = new Date();
-
-    await this.saveCollection(updatedCollection);
-    return updatedCollection;
+    await this.saveCollection(newCollection);
+    return newCollection;
   },
 
   /**
@@ -153,19 +195,19 @@ export const petalogService = {
     pageId: string,
     updates: Partial<CollectionPage>
   ): Promise<PetALogCollection> {
-    const updatedCollection = { ...collection };
-    const pageIndex = updatedCollection.pages.findIndex(p => p.id === pageId);
+    const newPages = collection.pages.map((p) =>
+      p.id === pageId
+        ? { ...p, ...updates, updatedAt: new Date() }
+        : p
+    );
 
-    if (pageIndex !== -1) {
-      updatedCollection.pages[pageIndex] = {
-        ...updatedCollection.pages[pageIndex],
-        ...updates,
-        updatedAt: new Date(),
-      };
-    }
+    const newCollection: PetALogCollection = {
+      ...collection,
+      pages: newPages,
+    };
 
-    await this.saveCollection(updatedCollection);
-    return updatedCollection;
+    await this.saveCollection(newCollection);
+    return newCollection;
   },
 
   /**

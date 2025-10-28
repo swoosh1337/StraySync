@@ -10,14 +10,18 @@ import {
   Modal,
   TextInput,
   Dimensions,
+  Image,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import PagerView from 'react-native-pager-view';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { PetALogCollection, createSticker, AnimalSticker as AnimalStickerType, createCollectionPage } from '../types/petalog';
 import { petalogService } from '../services/petalogService';
 import AnimalSticker from '../components/AnimalSticker';
+import { CANVAS_CONSTANTS } from '../types/petalog';
+import { backgroundRemovalService } from '../services/backgroundRemoval';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -27,6 +31,9 @@ const PetALogScreen: React.FC = () => {
   const [selectedSticker, setSelectedSticker] = useState<AnimalStickerType | null>(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [stickerName, setStickerName] = useState('');
+  const [cropModalVisible, setCropModalVisible] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [processingImage, setProcessingImage] = useState(false);
   const pagerRef = useRef<PagerView>(null);
 
   // Load collection on mount
@@ -47,6 +54,90 @@ const PetALogScreen: React.FC = () => {
     }
   };
 
+  const cropAndAddImage = async (imageUri: string) => {
+    try {
+      // Open crop editor
+      const result = await ImageManipulator.manipulateAsync(
+        imageUri,
+        [],
+        { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      // Show cropping interface
+      setImageToCrop(result.uri);
+      setCropModalVisible(true);
+    } catch (error) {
+      console.error('[PetALog] Error preparing crop:', error);
+      // If cropping fails, just add the original image
+      await addImageToCollection(imageUri);
+    }
+  };
+
+  const addImageToCollection = async (imageUri: string) => {
+    try {
+      setProcessingImage(true);
+
+      // Try to remove background (with error handling)
+      let finalImageUri = imageUri;
+      let bgRemoved = false;
+
+      try {
+        const bgRemovalResult = await backgroundRemovalService.removeBackground(imageUri);
+
+        if (bgRemovalResult && bgRemovalResult.success) {
+          finalImageUri = bgRemovalResult.imageUri;
+          bgRemoved = true;
+          if (__DEV__) {
+            console.log('[PetALog] Background removed successfully');
+          }
+        }
+      } catch (bgError) {
+        // Silently fail background removal and use original image
+        console.error('[PetALog] Background removal error:', bgError);
+        if (__DEV__) {
+          console.log('[PetALog] Using original image due to error');
+        }
+      }
+
+      // Add photo at center of canvas
+      const centerX = SCREEN_WIDTH / 2 - CANVAS_CONSTANTS.STICKER_SIZE / 2; // Half of sticker width
+      const centerY = SCREEN_HEIGHT / 2 - CANVAS_CONSTANTS.STICKER_SIZE / 2; // Half of sticker height
+
+      const newSticker = createSticker(
+        finalImageUri,
+        { x: centerX, y: centerY },
+        'cat' // TODO: Detect animal type
+      );
+
+      if (collection) {
+        const updatedCollection = await petalogService.addSticker(
+          collection,
+          newSticker
+        );
+        setCollection(updatedCollection);
+
+        const message = bgRemoved
+          ? '✨ Background removed! Tap to name it, or drag to move.'
+          : 'Photo added! Tap to name it, or drag to move.';
+
+        Alert.alert('Success', message);
+      }
+    } catch (error) {
+      console.error('[PetALog] Error adding to collection:', error);
+      Alert.alert('Error', 'Failed to add photo. Please try again.');
+    } finally {
+      setProcessingImage(false);
+    }
+  };
+
+  const handleCropComplete = async () => {
+    if (imageToCrop) {
+      await addImageToCollection(imageToCrop);
+      setCropModalVisible(false);
+      setImageToCrop(null);
+    }
+  };
+
   const handleAddPhoto = async () => {
     try {
       // Request camera permissions
@@ -60,7 +151,7 @@ const PetALogScreen: React.FC = () => {
         return;
       }
 
-      // Launch camera
+      // Launch camera with editing enabled
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
@@ -69,24 +160,7 @@ const PetALogScreen: React.FC = () => {
       });
 
       if (!result.canceled && result.assets[0]) {
-        // Add photo at center of canvas
-        const centerX = SCREEN_WIDTH / 2 - 75; // Half of sticker width
-        const centerY = SCREEN_HEIGHT / 2 - 75; // Half of sticker height
-
-        const newSticker = createSticker(
-          result.assets[0].uri,
-          { x: centerX, y: centerY },
-          'cat' // TODO: Detect animal type
-        );
-
-        if (collection) {
-          const updatedCollection = await petalogService.addSticker(
-            collection,
-            newSticker
-          );
-          setCollection(updatedCollection);
-          Alert.alert('Success', 'Photo added! Tap to name it, or drag to move.');
-        }
+        await addImageToCollection(result.assets[0].uri);
       }
     } catch (error) {
       console.error('[PetALog] Error adding photo:', error);
@@ -114,24 +188,7 @@ const PetALogScreen: React.FC = () => {
       });
 
       if (!result.canceled && result.assets[0]) {
-        // Add photo at center of canvas
-        const centerX = SCREEN_WIDTH / 2 - 75;
-        const centerY = SCREEN_HEIGHT / 2 - 75;
-
-        const newSticker = createSticker(
-          result.assets[0].uri,
-          { x: centerX, y: centerY },
-          'cat'
-        );
-
-        if (collection) {
-          const updatedCollection = await petalogService.addSticker(
-            collection,
-            newSticker
-          );
-          setCollection(updatedCollection);
-          Alert.alert('Success', 'Photo added! Tap to name it, or drag to move.');
-        }
+        await addImageToCollection(result.assets[0].uri);
       }
     } catch (error) {
       console.error('[PetALog] Error picking photo:', error);
@@ -324,14 +381,30 @@ const PetALogScreen: React.FC = () => {
           ))}
         </PagerView>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={handleAddPhotoOptions}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="add" size={32} color="#fff" />
-      </TouchableOpacity>
+        {/* Floating Action Button */}
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={handleAddPhotoOptions}
+          activeOpacity={0.8}
+          disabled={processingImage}
+        >
+          {processingImage ? (
+            <ActivityIndicator size="large" color="#fff" />
+          ) : (
+            <Ionicons name="add" size={32} color="#fff" />
+          )}
+        </TouchableOpacity>
+
+        {/* Processing Overlay */}
+        {processingImage && (
+          <View style={styles.processingOverlay}>
+            <View style={styles.processingCard}>
+              <ActivityIndicator size="large" color="#4CAF50" />
+              <Text style={styles.processingText}>🪄 Removing background...</Text>
+              <Text style={styles.processingSubtext}>This may take a few seconds</Text>
+            </View>
+          </View>
+        )}
 
         {/* Page Indicator */}
         <View style={styles.pageIndicator}>
@@ -611,6 +684,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#212121',
+  },
+  processingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  processingCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    gap: 16,
+    minWidth: 250,
+  },
+  processingText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#212121',
+    textAlign: 'center',
+  },
+  processingSubtext: {
+    fontSize: 14,
+    color: '#757575',
+    textAlign: 'center',
   },
 });
 

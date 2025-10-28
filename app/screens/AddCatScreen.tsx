@@ -165,33 +165,61 @@ const AddCatScreen: React.FC = () => {
       const result = await aiAnalysisService.analyzeAnimal(uri);
 
       if (result) {
-        // Auto-fill detected information
-        if (result.analysis.animalType === 'cat' || result.analysis.animalType === 'dog') {
-          setAnimalType(result.analysis.animalType);
-        }
-        if (result.analysis.breed) {
-          setBreed(result.analysis.breed);
-          setName(result.analysis.breed); // Also set as name
-        }
-        if (result.analysis.color) {
-          setColor(result.analysis.color);
-        }
-        if (result.analysis.age) {
-          setAge(result.analysis.age);
-        }
-        if (result.analysis.description) {
-          setDescription(result.analysis.description);
-        }
+        // Prepare suggested autofill values
+        const suggested = result.analysis;
 
-        // Show success message
-        Alert.alert(
-          '✨ AI Analysis Complete',
-          `Detected: ${result.analysis.breed || result.analysis.animalType}\nConfidence: ${Math.round((result.analysis.confidence || 0) * 100)}%\n\nFields have been auto-filled. You can edit them before submitting.`,
-          [{ text: 'Got it!' }]
-        );
+        // Only auto-fill empty fields; otherwise ask to apply
+        const applySuggestions = () => {
+          if (suggested.animalType && (suggested.animalType === 'cat' || suggested.animalType === 'dog')) {
+            setAnimalType((prev) => prev || suggested.animalType!);
+          }
+          if (suggested.breed) {
+            setBreed((prev) => prev || suggested.breed);
+            setName((prev) => prev || suggested.breed);
+          }
+          if (suggested.color) {
+            setColor((prev) => prev || suggested.color!);
+          }
+          if (suggested.age) {
+            setAge((prev) => prev || suggested.age!);
+          }
+          if (suggested.description) {
+            setDescription((prev) => prev || suggested.description!);
+          }
+        };
+
+        const anyEmpty = !breed || !name || !color || !age || !description;
+
+        if (anyEmpty) {
+          applySuggestions();
+          Alert.alert(
+            '✨ AI Analysis Complete',
+            `Detected: ${suggested.breed || suggested.animalType}\nConfidence: ${Math.round((suggested.confidence || 0) * 100)}%\n\nEmpty fields were auto-filled. You can edit them before submitting.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            '✨ AI Analysis Complete',
+            `Detected: ${suggested.breed || suggested.animalType}\nConfidence: ${Math.round((suggested.confidence || 0) * 100)}%`,
+            [
+              { text: 'Keep mine' },
+              {
+                text: 'Use AI values',
+                onPress: applySuggestions,
+              },
+            ]
+          );
+        }
       }
     } catch (error) {
       console.error('[AddCat] AI analysis error:', error);
+      Alert.alert(
+        'Analysis Failed',
+        'We could not analyze this image. Please try again or fill details manually.',
+        [
+          { text: 'OK' },
+        ]
+      );
     } finally {
       setAnalyzing(false);
     }

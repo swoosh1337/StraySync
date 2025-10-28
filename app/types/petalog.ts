@@ -3,6 +3,15 @@
  * Data models for the animal sticker collection feature
  */
 
+// Simple UUID generator for React Native
+const generateUUID = (): string => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 export interface AnimalSticker {
   id: string;
   imageUri: string; // Local file path or remote URL
@@ -44,11 +53,12 @@ export const CANVAS_CONSTANTS = {
 export const createSticker = (
   imageUri: string,
   position: { x: number; y: number },
-  animalType?: 'cat' | 'dog'
+  animalType?: 'cat' | 'dog',
+  name?: string
 ): AnimalSticker => ({
-  id: `sticker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+  id: `sticker_${generateUUID()}`,
   imageUri,
-  name: '', // User will name it later
+  name: name || '', // User will name it later
   position,
   scale: CANVAS_CONSTANTS.DEFAULT_STICKER_SCALE,
   rotation: 0,
@@ -58,7 +68,7 @@ export const createSticker = (
 
 // Helper to create new page
 export const createCollectionPage = (name: string): CollectionPage => ({
-  id: `page_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+  id: `page_${generateUUID()}`,
   name,
   stickers: [],
   backgroundColor: '#FFFFFF',

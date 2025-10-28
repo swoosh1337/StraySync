@@ -15,6 +15,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import SignInScreen from '../screens/SignInScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import EditAnimalScreen from '../screens/EditAnimalScreen';
+import PetALogScreen from '../screens/PetALogScreen';
 import { useAuth } from '../contexts/AuthContext';
 
 // types for navigation parameters
@@ -30,6 +31,7 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Map: { forceRefresh?: () => void } | undefined;
   Animals: undefined;
+  PetALog: undefined;
   Profile: undefined;
   Settings: undefined;
 };
@@ -64,6 +66,8 @@ const MainTabNavigator = () => {
             iconName = focused ? 'map' : 'map-outline';
           } else if (route.name === 'Animals') {
             iconName = focused ? 'paw' : 'paw-outline';
+          } else if (route.name === 'PetALog') {
+            iconName = focused ? 'albums' : 'albums-outline';
           } else if (route.name === 'Profile') {
             iconName = focused ? 'person' : 'person-outline';
           } else if (route.name === 'Settings') {
@@ -95,6 +99,13 @@ const MainTabNavigator = () => {
         component={AnimalsListScreen}
         options={{
           title: "Animals",
+        }}
+      />
+      <Tab.Screen
+        name="PetALog"
+        component={PetALogScreen}
+        options={{
+          title: "Pet-a-log",
         }}
       />
       {user && (

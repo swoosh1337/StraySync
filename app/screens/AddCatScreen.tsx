@@ -28,6 +28,7 @@ import { catService, supabase } from '../services/supabase';
 import { locationService } from '../services/location/locationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../contexts/AuthContext';
+import { aiAnalysisService } from '../services/aiAnalysis';
 
 type AddCatScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -67,6 +68,7 @@ const AddCatScreen: React.FC = () => {
   const [isAdoptable, setIsAdoptable] = useState(false);
   const [contactInfo, setContactInfo] = useState('');
   const [showDetails, setShowDetails] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
 
   // Theme colors
   const THEME = {
@@ -157,6 +159,44 @@ const AddCatScreen: React.FC = () => {
     };
   }, [user]);
 
+  const analyzeImage = async (uri: string) => {
+    setAnalyzing(true);
+    try {
+      const result = await aiAnalysisService.analyzeAnimal(uri);
+
+      if (result) {
+        // Auto-fill detected information
+        if (result.analysis.animalType === 'cat' || result.analysis.animalType === 'dog') {
+          setAnimalType(result.analysis.animalType);
+        }
+        if (result.analysis.breed) {
+          setBreed(result.analysis.breed);
+          setName(result.analysis.breed); // Also set as name
+        }
+        if (result.analysis.color) {
+          setColor(result.analysis.color);
+        }
+        if (result.analysis.age) {
+          setAge(result.analysis.age);
+        }
+        if (result.analysis.description) {
+          setDescription(result.analysis.description);
+        }
+
+        // Show success message
+        Alert.alert(
+          '✨ AI Analysis Complete',
+          `Detected: ${result.analysis.breed || result.analysis.animalType}\nConfidence: ${Math.round((result.analysis.confidence || 0) * 100)}%\n\nFields have been auto-filled. You can edit them before submitting.`,
+          [{ text: 'Got it!' }]
+        );
+      }
+    } catch (error) {
+      console.error('[AddCat] AI analysis error:', error);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
@@ -173,7 +213,10 @@ const AddCatScreen: React.FC = () => {
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      setImageUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setImageUri(uri);
+      // Analyze the image with AI
+      await analyzeImage(uri);
     }
   };
 
@@ -192,7 +235,10 @@ const AddCatScreen: React.FC = () => {
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      setImageUri(result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setImageUri(uri);
+      // Analyze the image with AI
+      await analyzeImage(uri);
     }
   };
 
@@ -514,7 +560,7 @@ const AddCatScreen: React.FC = () => {
 
         // Invalidate animals cache so lists refresh
         cache.invalidatePattern('animals:list');
-        
+
         // Navigate back immediately, then show the alert
         // This ensures we return to the map screen before the alert is shown
         navigation.goBack();
@@ -571,6 +617,12 @@ const AddCatScreen: React.FC = () => {
               {imageUri ? (
                 <View style={styles.photoPreviewContainer}>
                   <Image source={{ uri: imageUri }} style={styles.photoPreview} />
+                  {analyzing && (
+                    <View style={styles.analyzingOverlay}>
+                      <ActivityIndicator size="large" color="#fff" />
+                      <Text style={styles.analyzingText}>🤖 Analyzing with AI...</Text>
+                    </View>
+                  )}
                   <TouchableOpacity
                     style={styles.changePhotoButton}
                     onPress={() => setImageUri(null)}
@@ -723,6 +775,23 @@ const styles = StyleSheet.create({
   photoPreview: {
     width: '100%',
     height: '100%',
+  },
+  analyzingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  analyzingText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 8,
   },
   changePhotoButton: {
     position: 'absolute',

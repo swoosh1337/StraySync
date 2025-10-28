@@ -49,9 +49,6 @@ export default function App() {
         await withLoading(async () => {
           console.log('Initializing app services...');
 
-          // Initialize notifications
-          await notificationService.initialize();
-
           // Initialize notification service
           await notificationService.initialize();
           console.log('Notification service initialized successfully');

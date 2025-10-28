@@ -577,6 +577,16 @@ const AddCatScreen: React.FC = () => {
       if (newCat) {
         console.log('Successfully added animal:', newCat.id);
 
+        // Trigger AI matching with lost animals
+        try {
+          const { lostAnimalsService } = await import('../services/lostAnimals');
+          await lostAnimalsService.triggerMatchAnalysis(null, newCat.id);
+          console.log('Triggered lost animal matching for new sighting');
+        } catch (matchError) {
+          console.error('Failed to trigger matching:', matchError);
+          // Don't block the flow if matching fails
+        }
+
         // Set a flag in AsyncStorage to indicate a refresh is needed
         try {
           console.log('Setting mapNeedsRefresh flag to true');

@@ -30,6 +30,7 @@ type AnimalsListScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 type AnimalFilter = 'all' | 'cats' | 'dogs';
+type StatusFilter = 'active' | 'rescued';
 
 interface AdvancedFilters {
   adoptable: boolean | null;
@@ -47,6 +48,7 @@ const AnimalsListScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [animalFilter, setAnimalFilter] = useState<AnimalFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [userLocation, setUserLocation] = useState<{
     latitude: number;
@@ -87,7 +89,7 @@ const AnimalsListScreen: React.FC = () => {
   const fetchAnimals = useCallback(async (forceRefresh = false) => {
     try {
       // Check cache first (unless force refresh)
-      const cacheKey = CACHE_KEYS.ANIMALS_LIST(animalFilter);
+      const cacheKey = `${CACHE_KEYS.ANIMALS_LIST(animalFilter)}_${statusFilter}`;
       
       if (!forceRefresh) {
         const cachedData = cache.get<Cat[]>(cacheKey);
@@ -102,12 +104,25 @@ const AnimalsListScreen: React.FC = () => {
       setLoading(true);
       let fetchedAnimals: Cat[] = [];
       
-      if (animalFilter === 'all') {
-        fetchedAnimals = await catService.getCats();
-      } else if (animalFilter === 'cats') {
-        fetchedAnimals = await catService.getCatsOnly();
-      } else if (animalFilter === 'dogs') {
-        fetchedAnimals = await catService.getDogsOnly();
+      // Fetch based on status and animal type filters
+      if (statusFilter === 'rescued') {
+        // Fetch rescued animals
+        if (animalFilter === 'all') {
+          fetchedAnimals = await catService.getRescuedAnimals();
+        } else if (animalFilter === 'cats') {
+          fetchedAnimals = await catService.getRescuedCats();
+        } else if (animalFilter === 'dogs') {
+          fetchedAnimals = await catService.getRescuedDogs();
+        }
+      } else {
+        // Fetch active animals (not rescued)
+        if (animalFilter === 'all') {
+          fetchedAnimals = await catService.getCats();
+        } else if (animalFilter === 'cats') {
+          fetchedAnimals = await catService.getCatsOnly();
+        } else if (animalFilter === 'dogs') {
+          fetchedAnimals = await catService.getDogsOnly();
+        }
       }
       
       // Filter by distance if user location is available
@@ -134,7 +149,7 @@ const AnimalsListScreen: React.FC = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [animalFilter, searchQuery, userLocation, searchRadius]);
+  }, [animalFilter, statusFilter, searchQuery, userLocation, searchRadius]);
 
   // Load from cache on focus, only fetch if cache miss
   useFocusEffect(
@@ -145,7 +160,7 @@ const AnimalsListScreen: React.FC = () => {
 
   useEffect(() => {
     fetchAnimals(false); // Use cache if available
-  }, [fetchAnimals, animalFilter]);
+  }, [fetchAnimals, animalFilter, statusFilter]);
 
   // Re-apply filters when advanced filters change
   useEffect(() => {
@@ -268,6 +283,47 @@ const AnimalsListScreen: React.FC = () => {
     } else {
       return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
     }
+  };
+
+  const renderStatusTabs = () => {
+    return (
+      <View style={styles.statusTabsContainer}>
+        <TouchableOpacity
+          style={[
+            styles.statusTab,
+            statusFilter === 'active' && styles.activeStatusTab,
+          ]}
+          onPress={() => setStatusFilter('active')}
+        >
+          <Ionicons 
+            name="paw" 
+            size={18} 
+            color={statusFilter === 'active' ? '#fff' : THEME.secondary} 
+          />
+          <Text style={[
+            styles.statusTabText,
+            statusFilter === 'active' && styles.activeStatusTabText,
+          ]}>Active</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.statusTab,
+            statusFilter === 'rescued' && styles.activeStatusTab,
+          ]}
+          onPress={() => setStatusFilter('rescued')}
+        >
+          <Ionicons 
+            name="heart" 
+            size={18} 
+            color={statusFilter === 'rescued' ? '#fff' : THEME.secondary} 
+          />
+          <Text style={[
+            styles.statusTabText,
+            statusFilter === 'rescued' && styles.activeStatusTabText,
+          ]}>Rescued</Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   const renderFilterButtons = () => {
@@ -637,6 +693,21 @@ const AnimalsListScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Lost & Found Banner */}
+      <TouchableOpacity
+        style={styles.lostFoundBanner}
+        onPress={() => navigation.navigate('LostAnimals')}
+      >
+        <View style={styles.lostFoundContent}>
+          <Ionicons name="heart-dislike" size={24} color="#FF5722" />
+          <View style={styles.lostFoundText}>
+            <Text style={styles.lostFoundTitle}>Lost & Found</Text>
+            <Text style={styles.lostFoundSubtitle}>Help reunite pets with their families</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={24} color="#757575" />
+      </TouchableOpacity>
+
       <View style={styles.searchAndFilterRow}>
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={20} color={THEME.lightText} style={styles.searchIcon} />
@@ -667,6 +738,7 @@ const AnimalsListScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
       
+      {renderStatusTabs()}
       {renderFilterButtons()}
       
       {userLocation && (
@@ -714,12 +786,78 @@ const styles = StyleSheet.create({
     backgroundColor: '#F5F5F5',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
+  lostFoundBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFF3E0',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF5722',
+  },
+  lostFoundContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  lostFoundText: {
+    flex: 1,
+  },
+  lostFoundTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#212121',
+  },
+  lostFoundSubtitle: {
+    fontSize: 13,
+    color: '#757575',
+    marginTop: 2,
+  },
   searchAndFilterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 16,
     gap: 12,
+  },
+  statusTabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 4,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  statusTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 6,
+  },
+  activeStatusTab: {
+    backgroundColor: '#4CAF50',
+  },
+  statusTabText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2E7D32',
+  },
+  activeStatusTabText: {
+    color: '#fff',
   },
   searchContainer: {
     flex: 1,

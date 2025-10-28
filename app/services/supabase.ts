@@ -461,6 +461,113 @@ export const catService = {
       return [];
     }
   },
+
+  // Get all rescued animals
+  async getRescuedAnimals(): Promise<Cat[]> {
+    try {
+      // Try to use the animals table first
+      const { data: animalsData, error: animalsError } = await supabase
+        .from('animals')
+        .select('*')
+        .eq('is_rescued', true)
+        .order('spotted_at', { ascending: false });
+      
+      if (!animalsError) {
+        console.log(`Found ${animalsData?.length || 0} rescued animals`);
+        return animalsData || [];
+      }
+      
+      console.log('Error fetching rescued animals from animals table, trying cats table:', animalsError.message);
+      
+      // Fallback to cats table
+      const { data, error } = await supabase
+        .from('cats')
+        .select('*')
+        .eq('is_rescued', true)
+        .order('spotted_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching rescued animals:', error);
+        return [];
+      }
+      
+      console.log(`Found ${data?.length || 0} rescued animals from cats table`);
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getRescuedAnimals:', error.message || error);
+      return [];
+    }
+  },
+
+  // Get rescued cats only
+  async getRescuedCats(): Promise<Cat[]> {
+    try {
+      const { data: animalsData, error: animalsError } = await supabase
+        .from('animals')
+        .select('*')
+        .eq('animal_type', 'cat')
+        .eq('is_rescued', true)
+        .order('spotted_at', { ascending: false });
+      
+      if (!animalsError) {
+        console.log(`Found ${animalsData?.length || 0} rescued cats`);
+        return animalsData || [];
+      }
+      
+      // Fallback to cats table
+      const { data, error } = await supabase
+        .from('cats')
+        .select('*')
+        .eq('animal_type', 'cat')
+        .eq('is_rescued', true)
+        .order('spotted_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching rescued cats:', error);
+        return [];
+      }
+      
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getRescuedCats:', error.message || error);
+      return [];
+    }
+  },
+
+  // Get rescued dogs only
+  async getRescuedDogs(): Promise<Cat[]> {
+    try {
+      const { data: animalsData, error: animalsError } = await supabase
+        .from('animals')
+        .select('*')
+        .eq('animal_type', 'dog')
+        .eq('is_rescued', true)
+        .order('spotted_at', { ascending: false });
+      
+      if (!animalsError) {
+        console.log(`Found ${animalsData?.length || 0} rescued dogs`);
+        return animalsData || [];
+      }
+      
+      // Fallback to cats table
+      const { data, error } = await supabase
+        .from('cats')
+        .select('*')
+        .eq('animal_type', 'dog')
+        .eq('is_rescued', true)
+        .order('spotted_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching rescued dogs:', error);
+        return [];
+      }
+      
+      return data || [];
+    } catch (error: any) {
+      console.error('Error in getRescuedDogs:', error.message || error);
+      return [];
+    }
+  },
   
   // Get cat sightings within a specific time frame (in hours)
   async getCatsWithinTimeFrame(hours: number): Promise<Cat[]> {

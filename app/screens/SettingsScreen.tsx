@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
   Linking,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -19,6 +20,15 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { cleanupService } from '../services/cleanup';
+import { useAuth } from '../contexts/AuthContext';
+
+// Safely import RevenueCat (may not be available in Expo Go)
+let Purchases: any = null;
+try {
+  Purchases = require('react-native-purchases').default;
+} catch (e) {
+  console.warn('[Settings] RevenueCat not available (Expo Go)');
+}
 
 type SettingsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -27,6 +37,7 @@ type SettingsScreenNavigationProp = NativeStackNavigationProp<
 
 const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<SettingsScreenNavigationProp>();
+  const { user, profile } = useAuth();
   const {
     notificationRadius,
     setNotificationRadius,
@@ -39,6 +50,16 @@ const SettingsScreen: React.FC = () => {
     searchRadius,
     setSearchRadius,
   } = useSettings();
+
+  const [purchaseLoading, setPurchaseLoading] = useState<string | null>(null);
+  const [isSupporter, setIsSupporter] = useState(false);
+
+  // Check supporter status
+  useEffect(() => {
+    if (profile?.is_supporter) {
+      setIsSupporter(true);
+    }
+  }, [profile]);
 
   // Convert kilometers to miles for display
   const kmToMiles = (km: number) => {
@@ -174,6 +195,106 @@ const SettingsScreen: React.FC = () => {
     );
   };
 
+  // Donation tiers
+  const donationTiers = [
+    {
+      id: 'tier1',
+      productId: 'com.straysync.donation.tier1',
+      price: '$0.99',
+      name: 'Cat Lover',
+      icon: '🐱',
+      color: '#81C784',
+      benefits: ['Support development', 'Remove ads (coming soon)'],
+    },
+    {
+      id: 'tier2',
+      productId: 'com.straysync.donation.tier2',
+      price: '$4.99',
+      name: 'Animal Guardian',
+      icon: '🐾',
+      color: '#66BB6A',
+      benefits: ['Support development', 'Remove ads (coming soon)'],
+      popular: true,
+    },
+    {
+      id: 'tier3',
+      productId: 'com.straysync.donation.tier3',
+      price: '$9.99',
+      name: 'Rescue Hero',
+      icon: '⭐',
+      color: '#4CAF50',
+      benefits: ['Support development', 'Remove ads (coming soon)'],
+    },
+  ];
+
+  const handleDonation = async (tierId: string, productId: string) => {
+    if (!user) {
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in to support the app',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign In',
+            onPress: () => {
+              // Navigate to sign in - already handled by AuthContext
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    try {
+      setPurchaseLoading(tierId);
+
+      // In development, show a success message
+      if (__DEV__) {
+        Alert.alert(
+          '🎉 Thank You!',
+          'Donation feature is in development mode.\n\nYour support will help us:\n• Keep the app free\n• Add more features\n• Help more stray animals',
+          [{ text: 'OK' }]
+        );
+        setPurchaseLoading(null);
+        return;
+      }
+
+      // Production: Use RevenueCat
+      if (!Purchases) {
+        Alert.alert(
+          'Not Available',
+          'In-app purchases require a production build. Donations are coming soon!',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      const purchaseResult = await Purchases.purchasePackage({
+        identifier: productId,
+      } as any);
+
+      if (purchaseResult) {
+        Alert.alert(
+          '🎉 Thank You!',
+          'Your support helps us make StraySync better for everyone and helps save more stray animals!',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('Purchase error:', error);
+
+      if (error.code !== 'USER_CANCELLED') {
+        Alert.alert(
+          'Purchase Failed',
+          'Something went wrong. Please try again later.',
+          [{ text: 'OK' }]
+        );
+      }
+    } finally {
+      setPurchaseLoading(null);
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.section}>
@@ -298,6 +419,73 @@ const SettingsScreen: React.FC = () => {
             receive notifications even when the app is closed.
           </Text>
         )} */}
+      </View>
+
+      {/* Support the App Section */}
+      <View style={styles.section}>
+        <View style={styles.donationHeader}>
+          <Text style={styles.sectionTitle}>Support the App</Text>
+          {isSupporter && (
+            <View style={styles.supporterBadge}>
+              <Ionicons name="star" size={16} color="#FFD700" />
+              <Text style={styles.supporterBadgeText}>Supporter</Text>
+            </View>
+          )}
+        </View>
+
+        <Text style={styles.donationDescription}>
+          Your support keeps StraySync free and helps us save more animals!
+        </Text>
+
+        {donationTiers.map((tier) => (
+          <TouchableOpacity
+            key={tier.id}
+            style={[
+              styles.donationCard,
+              { borderColor: tier.color },
+              tier.popular && styles.popularCard,
+            ]}
+            onPress={() => handleDonation(tier.id, tier.productId)}
+            disabled={purchaseLoading !== null}
+            activeOpacity={0.7}
+          >
+            {tier.popular && (
+              <View style={styles.popularBadge}>
+                <Text style={styles.popularBadgeText}>MOST POPULAR</Text>
+              </View>
+            )}
+
+            <View style={styles.donationCardHeader}>
+              <View style={styles.donationIconContainer}>
+                <Text style={styles.donationIcon}>{tier.icon}</Text>
+              </View>
+              <View style={styles.donationInfo}>
+                <Text style={styles.donationName}>{tier.name}</Text>
+                <Text style={[styles.donationPrice, { color: tier.color }]}>
+                  {tier.price}
+                </Text>
+              </View>
+              {purchaseLoading === tier.id ? (
+                <ActivityIndicator size="small" color={tier.color} />
+              ) : (
+                <Ionicons name="chevron-forward" size={24} color={tier.color} />
+              )}
+            </View>
+
+            <View style={styles.benefitsList}>
+              {tier.benefits.map((benefit, index) => (
+                <View key={index} style={styles.benefitRow}>
+                  <Ionicons name="checkmark-circle" size={16} color={tier.color} />
+                  <Text style={styles.benefitText}>{benefit}</Text>
+                </View>
+              ))}
+            </View>
+          </TouchableOpacity>
+        ))}
+
+        <Text style={styles.donationFooter}>
+          One-time donation • All proceeds support development and animal welfare
+        </Text>
       </View>
 
       <View style={styles.section}>
@@ -476,6 +664,115 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     marginLeft: 8,
+  },
+  donationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  supporterBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF9C4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 4,
+  },
+  supporterBadgeText: {
+    color: '#F57F17',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  donationDescription: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  donationCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    position: 'relative',
+  },
+  popularCard: {
+    borderWidth: 3,
+    backgroundColor: '#F1F8F4',
+  },
+  popularBadge: {
+    position: 'absolute',
+    top: -10,
+    right: 20,
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  popularBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  donationCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  donationIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  donationIcon: {
+    fontSize: 28,
+  },
+  donationInfo: {
+    flex: 1,
+  },
+  donationName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 2,
+  },
+  donationPrice: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  benefitsList: {
+    gap: 8,
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  benefitText: {
+    fontSize: 14,
+    color: '#555',
+    flex: 1,
+  },
+  donationFooter: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 });
 

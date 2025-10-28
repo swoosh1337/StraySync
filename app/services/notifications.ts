@@ -65,8 +65,9 @@ export const notificationService = {
 
       return token;
     } catch (error: any) {
+      // Silently fail in development - push notifications don't work in simulator
       if (__DEV__) {
-        console.error('[Notifications] Failed to get push token:', error.message);
+        console.log('[Notifications] Push token not available (this is normal in simulator)');
       }
       return null;
     }

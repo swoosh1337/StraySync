@@ -7,19 +7,16 @@ const RATE_LIMITS = {
     perMinute: 2,
     perHour: 10,
     perDay: 30,
-    burst: 3,
   },
   supporter: {
     perMinute: 5,
     perHour: 50,
     perDay: 200,
-    burst: 5,
   },
   admin: {
     perMinute: 20,
     perHour: 500,
     perDay: 2000,
-    burst: 10,
   }
 }
 
@@ -48,16 +45,31 @@ async function checkRateLimit(
   for (const window of windows) {
     const windowStart = new Date(now.getTime() - window.duration)
     
-    // Count requests in this window
-    const { count, error } = await supabase
-      .from('ai_usage')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .gte('created_at', windowStart.toISOString())
+    // Count requests in this window with basic retry/backoff on transient errors
+    let count: number | null = null
+    let lastError: any = null
+    const attempts = [0, 200, 500] // initial + backoffs (ms)
+    for (let i = 0; i < attempts.length; i++) {
+      if (attempts[i] > 0) {
+        await new Promise((r) => setTimeout(r, attempts[i]))
+      }
+      const { count: c, error } = await supabase
+        .from('ai_usage')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .gte('created_at', windowStart.toISOString())
+      if (!error) {
+        count = c ?? 0
+        lastError = null
+        break
+      }
+      lastError = error
+      console.error(`Rate limit check error (attempt ${i + 1}):`, error)
+    }
     
-    if (error) {
-      console.error('Rate limit check error:', error)
-      throw error
+    // If still failing after retries, fall back to safe default (treat as 0 to avoid false 429s)
+    if (count === null && lastError) {
+      count = 0
     }
     
     // Check if limit exceeded

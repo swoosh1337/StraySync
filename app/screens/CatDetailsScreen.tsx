@@ -55,6 +55,11 @@ const CatDetailsScreen: React.FC = () => {
   const [commentCount, setCommentCount] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
   const [favoriteCount, setFavoriteCount] = useState(0);
+  const [rescueModalVisible, setRescueModalVisible] = useState(false);
+  const [rescuerName, setRescuerName] = useState('');
+  const [rescuerPhone, setRescuerPhone] = useState('');
+  const [rescuerEmail, setRescuerEmail] = useState('');
+  const [rescueNotes, setRescueNotes] = useState('');
 
 
 
@@ -287,47 +292,66 @@ const CatDetailsScreen: React.FC = () => {
       return;
     }
 
-    Alert.alert(
-      'Confirm Rescue',
-      'Did you adopt this animal or take it to a shelter? This will remove it from the map.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Yes, I Rescued It',
-          onPress: async () => {
-            try {
-              setRecordingAction(true);
-              const success = await catService.recordAction(
-                user.id,
-                animal.id,
-                'rescued'
-              );
+    // Show modal to collect rescuer contact info
+    setRescueModalVisible(true);
+  };
 
-              if (success) {
-                setHasRescued(true);
-                Alert.alert(
-                  'Amazing!',
-                  'Thank you for rescuing this animal! The sighting will be removed from the map.',
-                  [
-                    {
-                      text: 'OK',
-                      onPress: () => navigation.goBack(),
-                    },
-                  ]
-                );
-              } else {
-                Alert.alert('Already Recorded', 'You have already recorded rescuing this animal.');
-              }
-            } catch (error) {
-              console.error('Error recording rescue:', error);
-              Alert.alert('Error', 'Failed to record the rescue. Please try again.');
-            } finally {
-              setRecordingAction(false);
-            }
-          },
-        },
-      ]
-    );
+  const confirmRescue = async () => {
+    if (!rescuerName.trim()) {
+      Alert.alert('Name Required', 'Please provide your name so the owner can contact you.');
+      return;
+    }
+
+    if (!rescuerPhone.trim() && !rescuerEmail.trim()) {
+      Alert.alert('Contact Required', 'Please provide at least a phone number or email.');
+      return;
+    }
+
+    try {
+      setRecordingAction(true);
+      setRescueModalVisible(false);
+
+      // Update animal with rescuer contact info
+      const { error } = await supabase
+        .from('animals')
+        .update({
+          rescuer_name: rescuerName,
+          rescuer_phone: rescuerPhone || null,
+          rescuer_email: rescuerEmail || null,
+          rescue_notes: rescueNotes || null,
+        })
+        .eq('id', animal.id);
+
+      if (error) throw error;
+
+      // Record the rescue action
+      const success = await catService.recordAction(
+        user!.id,
+        animal.id,
+        'rescued'
+      );
+
+      if (success) {
+        setHasRescued(true);
+        Alert.alert(
+          'Amazing!',
+          'Thank you for rescuing this animal! Your contact info has been saved so the owner can reach you.',
+          [
+            {
+              text: 'OK',
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Already Recorded', 'You have already recorded rescuing this animal.');
+      }
+    } catch (error) {
+      console.error('Error recording rescue:', error);
+      Alert.alert('Error', 'Failed to record the rescue. Please try again.');
+    } finally {
+      setRecordingAction(false);
+    }
   };
 
   const handleToggleFavorite = async () => {
@@ -507,6 +531,70 @@ const CatDetailsScreen: React.FC = () => {
                 {animal.description || 'No description provided.'}
               </Text>
             </View>
+
+            {/* Rescuer Contact Info (for rescued animals) */}
+            {animal.is_rescued && animal.rescuer_name && (
+              <View style={styles.rescuerInfoContainer}>
+                <View style={styles.rescuerHeader}>
+                  <Ionicons name="heart-circle" size={24} color="#4CAF50" />
+                  <Text style={styles.rescuerTitle}>Animal Rescued!</Text>
+                </View>
+                <Text style={styles.rescuerSubtitle}>
+                  This animal has been rescued. Contact the rescuer if this is your lost pet:
+                </Text>
+                <View style={styles.rescuerDetails}>
+                  <View style={styles.rescuerRow}>
+                    <Ionicons name="person" size={18} color="#4CAF50" />
+                    <Text style={styles.rescuerLabel}>Rescuer:</Text>
+                    <Text style={styles.rescuerValue}>{animal.rescuer_name}</Text>
+                  </View>
+                  {animal.rescuer_phone && (
+                    <TouchableOpacity 
+                      style={styles.rescuerRow}
+                      onPress={() => {
+                        const phoneUrl = `tel:${animal.rescuer_phone}`;
+                        Alert.alert(
+                          'Call Rescuer',
+                          `Call ${animal.rescuer_name}?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            { text: 'Call', onPress: () => require('react-native').Linking.openURL(phoneUrl) }
+                          ]
+                        );
+                      }}
+                    >
+                      <Ionicons name="call" size={18} color="#4CAF50" />
+                      <Text style={styles.rescuerLabel}>Phone:</Text>
+                      <Text style={[styles.rescuerValue, styles.rescuerLink]}>{animal.rescuer_phone}</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#4CAF50" />
+                    </TouchableOpacity>
+                  )}
+                  {animal.rescuer_email && (
+                    <TouchableOpacity 
+                      style={styles.rescuerRow}
+                      onPress={() => {
+                        const emailUrl = `mailto:${animal.rescuer_email}`;
+                        require('react-native').Linking.openURL(emailUrl);
+                      }}
+                    >
+                      <Ionicons name="mail" size={18} color="#4CAF50" />
+                      <Text style={styles.rescuerLabel}>Email:</Text>
+                      <Text style={[styles.rescuerValue, styles.rescuerLink]}>{animal.rescuer_email}</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#4CAF50" />
+                    </TouchableOpacity>
+                  )}
+                  {animal.rescue_notes && (
+                    <View style={styles.rescuerNotesContainer}>
+                      <Ionicons name="document-text" size={18} color="#4CAF50" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.rescuerLabel}>Notes:</Text>
+                        <Text style={styles.rescuerNotes}>{animal.rescue_notes}</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
 
             {/* Animal Details */}
             {(animal.name || animal.breed || animal.color || animal.age || animal.gender || animal.health_status || animal.is_neutered || animal.is_adoptable) && (
@@ -745,6 +833,88 @@ const CatDetailsScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Rescue Contact Modal */}
+      <Modal
+        visible={rescueModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setRescueModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={styles.modalScrollContent}>
+            <View style={styles.modalContent}>
+              <Ionicons name="heart-circle" size={48} color="#4CAF50" style={{ alignSelf: 'center', marginBottom: 12 }} />
+              <Text style={styles.modalTitle}>Rescue Contact Info</Text>
+              <Text style={styles.modalSubtitle}>
+                Provide your contact info so the owner can reach you if this is their lost pet
+              </Text>
+
+              <Text style={styles.inputLabel}>Your Name *</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={rescuerName}
+                onChangeText={setRescuerName}
+                placeholder="Enter your name"
+                autoCapitalize="words"
+              />
+
+              <Text style={styles.inputLabel}>Phone Number</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={rescuerPhone}
+                onChangeText={setRescuerPhone}
+                placeholder="Enter phone number"
+                keyboardType="phone-pad"
+              />
+
+              <Text style={styles.inputLabel}>Email</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={rescuerEmail}
+                onChangeText={setRescuerEmail}
+                placeholder="Enter email address"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.inputLabel}>Notes (Optional)</Text>
+              <TextInput
+                style={[styles.modalInput, { height: 80 }]}
+                value={rescueNotes}
+                onChangeText={setRescueNotes}
+                placeholder="Where did you take the animal? Any other details..."
+                multiline
+                textAlignVertical="top"
+              />
+
+              <Text style={styles.modalHint}>
+                * At least name and one contact method required
+              </Text>
+
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.modalCancelButton}
+                  onPress={() => setRescueModalVisible(false)}
+                >
+                  <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.modalSaveButton}
+                  onPress={confirmRescue}
+                  disabled={recordingAction}
+                >
+                  {recordingAction ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.modalSaveText}>Confirm Rescue</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -859,6 +1029,66 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: '#333',
   },
+  rescuerInfoContainer: {
+    backgroundColor: '#E8F5E9',
+    padding: 16,
+    marginBottom: 20,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  rescuerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  rescuerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2E7D32',
+  },
+  rescuerSubtitle: {
+    fontSize: 14,
+    color: '#424242',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  rescuerDetails: {
+    gap: 12,
+  },
+  rescuerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  rescuerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#424242',
+  },
+  rescuerValue: {
+    fontSize: 14,
+    color: '#212121',
+    flex: 1,
+  },
+  rescuerLink: {
+    color: '#2E7D32',
+    textDecorationLine: 'underline',
+  },
+  rescuerNotesContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 8,
+    alignItems: 'flex-start',
+  },
+  rescuerNotes: {
+    fontSize: 14,
+    color: '#424242',
+    lineHeight: 20,
+    marginTop: 4,
+  },
   mapSection: {
     marginBottom: 24,
   },
@@ -932,21 +1162,46 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 500,
   },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    color: '#333',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    color: '#212121',
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#757575',
+    marginBottom: 20,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#212121',
+    marginBottom: 8,
   },
   modalInput: {
     borderWidth: 1,
     borderColor: '#e0e0e0',
     borderRadius: 8,
     padding: 12,
-    minHeight: 120,
+    minHeight: 48,
     fontSize: 16,
     backgroundColor: '#f5f5f5',
     marginBottom: 16,
+  },
+  modalHint: {
+    fontSize: 12,
+    color: '#757575',
+    marginBottom: 20,
+    fontStyle: 'italic',
   },
   modalButtons: {
     flexDirection: 'row',

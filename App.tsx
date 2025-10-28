@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './app/navigation';
@@ -11,6 +11,7 @@ import { SplashScreen as CustomSplashScreen } from './app/components';
 import { useLoading } from './app/hooks';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, LogBox } from 'react-native';
+import { NavigationContainerRef } from '@react-navigation/native';
 
 // Ignore specific warnings that might be causing issues
 LogBox.ignoreLogs([
@@ -38,6 +39,7 @@ export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
   const { withLoading } = useLoading();
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   // Initialize app services
   useEffect(() => {
@@ -76,6 +78,22 @@ export default function App() {
     prepare();
   }, []);
 
+  // Handle notification taps
+  useEffect(() => {
+    // Handle notification tap when app is in foreground or background
+    const subscription = notificationService.addNotificationResponseListener((response) => {
+      const data = response.notification.request.content.data;
+      console.log('Notification tapped:', data);
+
+      if (data.type === 'lost_animal_match' && data.sightingId) {
+        // Navigate to the sighting details
+        navigationRef.current?.navigate('CatDetails', { catId: data.sightingId });
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
+
   // Handle splash screen completion
   const handleCustomSplashComplete = useCallback(() => {
     console.log('Custom splash screen animation completed');
@@ -107,7 +125,7 @@ export default function App() {
       <AuthProvider>
         <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
           <SettingsProvider>
-            <AppNavigator />
+            <AppNavigator navigationRef={navigationRef} />
             <StatusBar style="auto" />
           </SettingsProvider>
         </View>

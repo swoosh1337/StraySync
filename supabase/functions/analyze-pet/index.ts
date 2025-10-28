@@ -42,17 +42,24 @@ async function checkRateLimit(
     { duration: 24 * 60 * 60 * 1000, limit: limits.perDay, name: 'day' },
   ]
   
+  // Track window counts and reset times to pick the most constraining window
+  const windowStats: { name: string; limit: number; count: number; resetAt: Date }[] = []
+
   for (const window of windows) {
     const windowStart = new Date(now.getTime() - window.duration)
-    
+
     const { count } = await supabase
       .from('ai_usage')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
       .gte('created_at', windowStart.toISOString())
-    
-    if (count !== null && count >= window.limit) {
-      const resetAt = new Date(windowStart.getTime() + window.duration)
+
+    const numericCount = typeof count === 'number' ? count : 0
+    const resetAt = new Date(windowStart.getTime() + window.duration)
+    windowStats.push({ name: window.name, limit: window.limit, count: numericCount, resetAt })
+
+    if (numericCount >= window.limit) {
+      // Exceeded this window: reject immediately using this window's reset
       return {
         allowed: false,
         remaining: 0,
@@ -61,18 +68,15 @@ async function checkRateLimit(
       }
     }
   }
-  
-  // Calculate remaining
-  const { count: dayCount } = await supabase
-    .from('ai_usage')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .gte('created_at', new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString())
-  
+
+  // No window exceeded. Choose the window with the soonest reset time
+  const soonest = windowStats.reduce((a, b) => (a.resetAt < b.resetAt ? a : b))
+  const remaining = Math.max(0, (soonest.limit ?? 0) - (soonest.count ?? 0))
+
   return {
     allowed: true,
-    remaining: limits.perDay - (dayCount || 0),
-    resetAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+    remaining,
+    resetAt: soonest.resetAt,
     tier: userTier,
   }
 }
@@ -229,9 +233,27 @@ Be specific with breeds. Return ONLY the JSON, no other text.`,
 
     const result = await openaiResponse.json()
     
-    // Calculate cost
-    const tokensUsed = result.usage?.total_tokens || 0
-    const cost = (tokensUsed / 1000) * 0.01 // Approximate cost
+    // Calculate cost using GPT-4o rates
+    // Prefer explicit input/output token fields, fall back to prompt/completion, then total
+    const inputTokens =
+      result.usage?.input_tokens ??
+      result.usage?.prompt_tokens ??
+      0
+    const outputTokens =
+      result.usage?.output_tokens ??
+      result.usage?.completion_tokens ??
+      0
+    let tokensUsed = (inputTokens || 0) + (outputTokens || 0)
+    // If only total_tokens is provided, estimate a 75/25 split input/output
+    if (!inputTokens && !outputTokens && (result.usage?.total_tokens ?? 0) > 0) {
+      tokensUsed = result.usage.total_tokens
+      const estInput = Math.round(tokensUsed * 0.75)
+      const estOutput = tokensUsed - estInput
+      // Compute cost: $5 / 1M input, $20 / 1M output
+      var cost = (estInput / 1_000_000) * 5 + (estOutput / 1_000_000) * 20
+    } else {
+      var cost = ((inputTokens || 0) / 1_000_000) * 5 + ((outputTokens || 0) / 1_000_000) * 20
+    }
 
     // Parse AI response
     let analysis
@@ -241,10 +263,11 @@ Be specific with breeds. Return ONLY the JSON, no other text.`,
       analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(content)
     } catch (e) {
       console.error('Parse error:', e)
+      // Fallback: avoid invalid union values for clients. Omit/nullable fields.
       analysis = {
-        animalType: 'unknown',
-        breed: 'Unknown',
-        description: result.choices[0].message.content,
+        // animalType intentionally omitted to allow client to treat as unknown
+        breed: null,
+        description: result.choices?.[0]?.message?.content ?? null,
       }
     }
 

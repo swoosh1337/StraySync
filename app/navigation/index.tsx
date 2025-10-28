@@ -16,6 +16,9 @@ import SignInScreen from '../screens/SignInScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import EditAnimalScreen from '../screens/EditAnimalScreen';
 import PetALogScreen from '../screens/PetALogScreen';
+import LostAnimalsScreen from '../screens/LostAnimalsScreen';
+import CreateLostAnimalScreen from '../screens/CreateLostAnimalScreen';
+import LostAnimalDetailsScreen from '../screens/LostAnimalDetailsScreen';
 import { useAuth } from '../contexts/AuthContext';
 
 // types for navigation parameters
@@ -26,6 +29,9 @@ export type RootStackParamList = {
   CatDetails: { catId: string };
   AddCat: { latitude?: number; longitude?: number } | undefined;
   EditAnimal: { animalId: string };
+  LostAnimals: undefined;
+  CreateLostAnimal: undefined;
+  LostAnimalDetails: { lostAnimalId: string };
 };
 
 export type MainTabParamList = {
@@ -223,14 +229,40 @@ const RootNavigator = () => {
           headerTintColor: THEME.secondary,
         }}
       />
+      <Stack.Screen
+        name="LostAnimals"
+        component={LostAnimalsScreen}
+        options={{
+          headerShown: true,
+          title: "Lost & Found",
+          headerStyle: {
+            backgroundColor: THEME.primary,
+          },
+          headerTintColor: THEME.secondary,
+        }}
+      />
+      <Stack.Screen
+        name="CreateLostAnimal"
+        component={CreateLostAnimalScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="LostAnimalDetails"
+        component={LostAnimalDetailsScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack.Navigator>
   );
 };
 
 // main app container
-const Navigation = () => {
+const Navigation = ({ navigationRef }: { navigationRef?: any }) => {
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <RootNavigator />
     </NavigationContainer>
   );

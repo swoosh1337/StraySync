@@ -1,11 +1,8 @@
 import React, { useState, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  Image,
   Dimensions,
-  TouchableOpacity,
   SafeAreaView,
   FlatList,
   StatusBar,
@@ -14,61 +11,84 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as StoreReview from 'expo-store-review';
 import { RootStackParamList } from '../types';
+import OnboardingSlide from '../components/onboarding/OnboardingSlide';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 // Current onboarding version - must match the version in navigation/index.tsx
-const ONBOARDING_VERSION = '1.0';
+const ONBOARDING_VERSION = '2.0';
 
 // Define slide type
 type Slide = {
   id: string;
   title: string;
   description: string;
-  icon: 'paw' | 'map-marker' | 'camera' | 'bell';
+  illustrationType: 'map' | 'stickers' | 'camera' | 'lost-poster' | 'community' | 'welcome';
+  mascotPose: 'laying' | 'sitting-down' | 'sitting-up' | 'playing' | 'standing' | 'happy' | 'hunting';
+  mascotPosition: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
 };
 
-// Onboarding data
+// Onboarding data with new Duolingo-style screens - each with unique mascot!
 const slides: Slide[] = [
   {
     id: '1',
     title: 'Welcome to StraySync',
-    description: 'Help stray animals in your community by reporting sightings and connecting with others.',
-    icon: 'paw',
+    description: 'Join thousands helping stray animals find safety, care, and loving homes.',
+    illustrationType: 'welcome',
+    mascotPose: 'happy',
+    mascotPosition: 'bottom-right',
   },
   {
     id: '2',
-    title: 'Explore the Map',
-    description: 'View all reported animals on the map. Filter between cats and dogs to find specific animals.',
-    icon: 'map-marker',
+    title: 'Explore Your Area',
+    description: 'See stray animals spotted near you on an interactive map. Filter by type, health status, and more.',
+    illustrationType: 'map',
+    mascotPose: 'hunting',
+    mascotPosition: 'bottom-right',
   },
   {
     id: '3',
-    title: 'Report Stray Animals',
-    description: 'Easily report stray animals by taking a photo and marking their location on the map.',
-    icon: 'camera',
+    title: 'Collect Your Adventures',
+    description: 'Build your Pet-a-log! Snap photos of animals you meet and create your personal sticker collection.',
+    illustrationType: 'stickers',
+    mascotPose: 'playing',
+    mascotPosition: 'bottom-left',
   },
   {
     id: '4',
-    title: 'Get Notifications',
-    description: 'Receive alerts when new animals are reported near you to help them faster.',
-    icon: 'bell',
+    title: 'Help Strays in Need',
+    description: 'Report stray animals with a photo and location. Help your community keep track and provide care.',
+    illustrationType: 'camera',
+    mascotPose: 'standing',
+    mascotPosition: 'bottom-left',
+  },
+  {
+    id: '5',
+    title: 'Find Lost Pets',
+    description: 'Create and share lost pet posters. Connect with others who may have seen your missing companion.',
+    illustrationType: 'lost-poster',
+    mascotPose: 'sitting-down',
+    mascotPosition: 'bottom-right',
+  },
+  {
+    id: '6',
+    title: 'Join the Community',
+    description: 'Connect with animal lovers, rescue organizations, and shelters working to help strays.',
+    illustrationType: 'community',
+    mascotPose: 'sitting-up',
+    mascotPosition: 'bottom-left',
+  },
+  {
+    id: '7',
+    title: "You're All Set!",
+    description: 'Start making a difference in the lives of stray animals in your area today.',
+    illustrationType: 'welcome',
+    mascotPose: 'laying',
+    mascotPosition: 'center',
   },
 ];
-
-// Theme colors
-const THEME = {
-  primary: '#D0F0C0',
-  secondary: '#2E7D32',
-  accent: '#388E3C',
-  inactive: '#90A4AE',
-  background: '#F5F5F5',
-  card: '#FFFFFF',
-  text: '#212121',
-  lightText: '#757575',
-};
 
 type OnboardingScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -78,18 +98,48 @@ type OnboardingScreenNavigationProp = NativeStackNavigationProp<
 const OnboardingScreen: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  const ratingPromptShown = useRef(false);
   const navigation = useNavigation<OnboardingScreenNavigationProp>();
+
+  // Request rating when user reaches the last page
+  const requestRatingIfNeeded = async (pageIndex: number) => {
+    // Show rating prompt when user reaches the last page (index 6) and hasn't been prompted yet
+    if (pageIndex === 6 && !ratingPromptShown.current) {
+      ratingPromptShown.current = true;
+
+      try {
+        const isAvailable = await StoreReview.isAvailableAsync();
+        if (isAvailable) {
+          // Small delay to let the page settle
+          setTimeout(async () => {
+            try {
+              await StoreReview.requestReview();
+              console.log('[Onboarding] Rating prompt shown');
+            } catch (error) {
+              console.log('[Onboarding] Rating prompt error:', error);
+            }
+          }, 800);
+        }
+      } catch (error) {
+        console.log('[Onboarding] Store review not available');
+      }
+    }
+  };
 
   // Function to handle completing the onboarding
   const handleOnboardingComplete = async () => {
     try {
       // Save that onboarding has been completed with the current version
       await AsyncStorage.setItem('onboardingCompletedVersion', ONBOARDING_VERSION);
-      // Navigate to Sign In screen (user must authenticate before accessing main app)
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'SignIn' }],
+
+      // Track onboarding completion for rating
+      import('../services/rating').then(({ ratingService }) => {
+        ratingService.incrementActions();
       });
+
+      // The parent RootNavigator will detect the AsyncStorage change
+      // and automatically re-render with the correct screen
+      console.log('Onboarding completed, app will re-render automatically');
     } catch (error) {
       console.error('Error saving onboarding status:', error);
     }
@@ -100,61 +150,32 @@ const OnboardingScreen: React.FC = () => {
     handleOnboardingComplete();
   };
 
-  // Function to handle next button press
-  const handleNext = () => {
-    if (currentIndex < slides.length - 1) {
-      flatListRef.current?.scrollToIndex({
-        index: currentIndex + 1,
-        animated: true,
-      });
-    } else {
-      handleOnboardingComplete();
-    }
-  };
-
-  // Render individual slide
+  // Render individual slide using OnboardingSlide component
   const renderSlide = ({ item, index }: { item: Slide; index: number }) => {
-    return (
-      <View style={styles.slideContainer}>
-        <View style={styles.imageContainer}>
-          <View style={styles.iconContainer}>
-            <MaterialCommunityIcons name={item.icon} size={80} color={THEME.secondary} />
-          </View>
-        </View>
-        <View style={styles.textContainer}>
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.description}>{item.description}</Text>
-        </View>
-      </View>
-    );
-  };
+    const isLastSlide = index === slides.length - 1;
 
-  // Render pagination dots
-  const renderPagination = () => {
     return (
-      <View style={styles.paginationContainer}>
-        {slides.map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.paginationDot,
-              index === currentIndex ? styles.paginationDotActive : null,
-            ]}
-          />
-        ))}
-      </View>
+      <OnboardingSlide
+        title={item.title}
+        description={item.description}
+        illustrationType={item.illustrationType}
+        mascotPose={item.mascotPose}
+        mascotPosition={item.mascotPosition}
+        currentIndex={index}
+        totalSlides={slides.length}
+        onSkip={handleSkip}
+        onGetStarted={handleOnboardingComplete}
+        showSkip={!isLastSlide}
+        showCTA={isLastSlide}
+        ctaText="Get Started"
+      />
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor={THEME.primary} />
-      
-      {/* Skip button */}
-      <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-        <Text style={styles.skipButtonText}>Skip</Text>
-      </TouchableOpacity>
-      
+      <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
+
       {/* Slides */}
       <FlatList
         ref={flatListRef}
@@ -169,26 +190,9 @@ const OnboardingScreen: React.FC = () => {
             event.nativeEvent.contentOffset.x / width
           );
           setCurrentIndex(index);
+          requestRatingIfNeeded(index);
         }}
       />
-      
-      {/* Pagination */}
-      {renderPagination()}
-      
-      {/* Next/Done button */}
-      <View style={styles.bottomContainer}>
-        <TouchableOpacity style={styles.button} onPress={handleNext}>
-          <Text style={styles.buttonText}>
-            {currentIndex === slides.length - 1 ? 'Get Started' : 'Next'}
-          </Text>
-          <Ionicons
-            name={currentIndex === slides.length - 1 ? 'checkmark' : 'arrow-forward'}
-            size={20}
-            color="#FFF"
-            style={styles.buttonIcon}
-          />
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 };
@@ -196,109 +200,7 @@ const OnboardingScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: THEME.primary,
-  },
-  slideContainer: {
-    width,
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  imageContainer: {
-    flex: 0.6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  iconContainer: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-  },
-  image: {
-    width: width * 0.8,
-    height: height * 0.3,
-  },
-  textContainer: {
-    flex: 0.4,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: THEME.secondary,
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  description: {
-    fontSize: 16,
-    color: THEME.text,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  paginationContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  paginationDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: THEME.inactive,
-    marginHorizontal: 5,
-  },
-  paginationDotActive: {
-    backgroundColor: THEME.secondary,
-    width: 20,
-  },
-  bottomContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 20,
-  },
-  button: {
-    backgroundColor: THEME.secondary,
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 30,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  buttonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  buttonIcon: {
-    marginLeft: 10,
-  },
-  skipButton: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 20,
-    right: 20,
-    zIndex: 10,
-    padding: 10,
-  },
-  skipButtonText: {
-    color: THEME.secondary,
-    fontSize: 16,
-    fontWeight: '600',
+    backgroundColor: '#F8F9FA',
   },
 });
 

@@ -12,6 +12,8 @@ import { useLoading } from './app/hooks';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, LogBox } from 'react-native';
 import { NavigationContainerRef } from '@react-navigation/native';
+import type { RootStackParamList } from './app/navigation';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Ignore specific warnings that might be causing issues
 LogBox.ignoreLogs([
@@ -39,7 +41,7 @@ export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [showCustomSplash, setShowCustomSplash] = useState(true);
   const { withLoading } = useLoading();
-  const navigationRef = useRef<NavigationContainerRef<any>>(null);
+  const navigationRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
 
   // Initialize app services
   useEffect(() => {
@@ -121,15 +123,17 @@ export default function App() {
 
   // Main app
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-          <SettingsProvider>
-            <AppNavigator navigationRef={navigationRef} />
-            <StatusBar style="auto" />
-          </SettingsProvider>
-        </View>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+            <SettingsProvider>
+              <AppNavigator navigationRef={navigationRef} />
+              <StatusBar style="auto" />
+            </SettingsProvider>
+          </View>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

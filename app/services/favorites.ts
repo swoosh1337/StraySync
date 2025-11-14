@@ -50,6 +50,12 @@ export const favoritesService = {
 
       if (error) throw error;
 
+      // Track action for rating
+      import('./rating').then(({ ratingService }) => {
+        ratingService.incrementActions();
+        ratingService.promptForRating();
+      });
+
       if (__DEV__) {
         console.log('[Favorites] Added favorite');
       }

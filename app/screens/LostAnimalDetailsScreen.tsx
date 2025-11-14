@@ -13,14 +13,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
-import { lostAnimalsService, LostAnimal } from '../services/lostAnimals';
+import { lostAnimalsService, LostAnimal, type LostAnimalMatch } from '../services/lostAnimals';
 import { useAuth } from '../contexts/AuthContext';
 
 type LostAnimalDetailsRouteProp = RouteProp<RootStackParamList, 'LostAnimalDetails'>;
 
 const LostAnimalDetailsScreen: React.FC = () => {
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<LostAnimalDetailsRouteProp>();
   const { user } = useAuth();
   const { lostAnimalId } = route.params;
@@ -28,7 +29,7 @@ const LostAnimalDetailsScreen: React.FC = () => {
   const [lostAnimal, setLostAnimal] = useState<LostAnimal | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
-  const [matches, setMatches] = useState<any[]>([]);
+  const [matches, setMatches] = useState<LostAnimalMatch[]>([]);
   const [loadingMatches, setLoadingMatches] = useState(false);
 
   useEffect(() => {
@@ -43,7 +44,7 @@ const LostAnimalDetailsScreen: React.FC = () => {
       setMatches(matchesData);
       
       // Mark all unviewed matches as viewed
-      const unviewedMatches = matchesData.filter((m: any) => !m.viewed);
+      const unviewedMatches = matchesData.filter((m: LostAnimalMatch) => !m.viewed);
       for (const match of unviewedMatches) {
         await lostAnimalsService.markMatchViewed(match.id);
       }
@@ -56,12 +57,10 @@ const LostAnimalDetailsScreen: React.FC = () => {
 
   const loadLostAnimal = async () => {
     try {
-      // For now, get from the list - in production you'd have a getById method
-      const animals = await lostAnimalsService.getActiveLostAnimals();
-      const animal = animals.find(a => a.id === lostAnimalId);
+      const animal = await lostAnimalsService.getById(lostAnimalId);
       setLostAnimal(animal || null);
     } catch (error) {
-      console.error('[LostAnimalDetails] Error loading:', error);
+      console.error('[LostAnimalDetails] Error loading by id:', error);
     } finally {
       setLoading(false);
     }
@@ -254,7 +253,7 @@ const LostAnimalDetailsScreen: React.FC = () => {
               <Text style={styles.matchesSubtitle}>
                 AI found these possible sightings of {lostAnimal.name}
               </Text>
-              {matches.map((match: any) => (
+              {matches.map((match: LostAnimalMatch) => (
                 <TouchableOpacity
                   key={match.id}
                   style={styles.matchCard}
@@ -273,12 +272,15 @@ const LostAnimalDetailsScreen: React.FC = () => {
                       </Text>
                       <Ionicons name="chevron-forward" size={20} color="#757575" />
                     </View>
-                    <Text style={styles.matchReason} numberOfLines={2}>
-                      {match.match_reason}
+                    <Text style={styles.matchSubtext}>
+                      Tap to view full details and compare
                     </Text>
-                    <Text style={styles.matchDate}>
-                      Spotted {new Date(match.sighting?.spotted_at).toLocaleDateString()}
-                    </Text>
+                    <View style={styles.matchFooter}>
+                      <Ionicons name="calendar-outline" size={14} color="#757575" />
+                      <Text style={styles.matchDate}>
+                        Spotted {new Date(match.sighting?.spotted_at).toLocaleDateString()}
+                      </Text>
+                    </View>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -460,15 +462,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 2,
     borderColor: '#4CAF50',
+    minHeight: 100,
   },
   matchImage: {
     width: 100,
-    height: 100,
+    height: '100%',
     backgroundColor: '#E0E0E0',
   },
   matchContent: {
     flex: 1,
     padding: 12,
+    justifyContent: 'space-between',
   },
   matchHeader: {
     flexDirection: 'row',
@@ -477,15 +481,21 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   matchConfidence: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#4CAF50',
   },
-  matchReason: {
-    fontSize: 14,
-    color: '#424242',
-    marginBottom: 8,
-    lineHeight: 20,
+  matchSubtext: {
+    fontSize: 13,
+    color: '#757575',
+    fontStyle: 'italic',
+    flex: 1,
+  },
+  matchFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
   },
   matchDate: {
     fontSize: 12,

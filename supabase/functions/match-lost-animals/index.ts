@@ -135,7 +135,7 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
     if (coordError || !coordData || coordData.length === 0) {
         console.error('Could not fetch location via RPC:', coordError)
         console.log('Trying alternative method...')
-        
+
         // Fallback: Get all sightings without location filter
         // This ensures matching still works even if location parsing fails
         // Include rescued animals so owners can contact rescuers
@@ -152,7 +152,7 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
         }
 
         console.log(`Found ${allSightings.length} sightings (without location filter)`)
-        
+
         // Analyze each sighting
         for (const sighting of allSightings) {
             console.log(`Comparing with sighting: ${sighting.id}`)
@@ -160,7 +160,7 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
 
             if (matchResult && matchResult.confidence >= 80) {
                 console.log(`✅ MATCH FOUND! Confidence: ${matchResult.confidence}%`)
-                
+
                 const { error: insertError } = await supabase
                     .from('lost_animal_matches')
                     .insert({
@@ -169,7 +169,7 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
                         confidence_score: matchResult.confidence,
                         match_reason: matchResult.reason,
                     })
-                
+
                 if (insertError) {
                     console.error('Error inserting match:', insertError)
                 } else {
@@ -184,12 +184,12 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
 
     lat = coordData[0].latitude
     lng = coordData[0].longitude
-    
+
     console.log(`Location: lat=${lat}, lng=${lng}`)
 
     // Get recent sightings of the same type within reasonable distance (e.g., 50km)
     console.log(`Searching for ${lostAnimal.animal_type} sightings within 50km...`)
-    
+
     const { data: sightings, error: sightingsError } = await supabase
         .rpc('get_nearby_animals', {
             lat: lat,
@@ -202,7 +202,7 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
     if (sightingsError) {
         console.error('Error fetching nearby animals:', sightingsError)
         console.log('Trying without location filter...')
-        
+
         // Fallback: get all recent sightings without location filter
         const { data: allSightings, error: allError } = await supabase
             .from('animals')
@@ -210,14 +210,14 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
             .eq('animal_type', lostAnimal.animal_type)
             .gte('spotted_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
             .limit(50)
-        
+
         if (allError || !allSightings || allSightings.length === 0) {
             console.log('No recent sightings found at all')
             return
         }
-        
+
         console.log(`Found ${allSightings.length} sightings (without location filter)`)
-        
+
         // Use the fallback sightings
         for (const sighting of allSightings) {
             console.log(`Comparing with sighting: ${sighting.id}`)
@@ -225,7 +225,7 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
 
             if (matchResult && matchResult.confidence >= 80) {
                 console.log(`✅ MATCH FOUND! Confidence: ${matchResult.confidence}%`)
-                
+
                 const { error: insertError } = await supabase
                     .from('lost_animal_matches')
                     .insert({
@@ -234,7 +234,7 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
                         confidence_score: matchResult.confidence,
                         match_reason: matchResult.reason,
                     })
-                
+
                 if (!insertError) {
                     await sendMatchNotification(supabase, lostAnimal, sighting, matchResult.confidence)
                 }
@@ -244,10 +244,10 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
         }
         return
     }
-    
+
     if (!sightings || sightings.length === 0) {
         console.log('No recent sightings within 50km - trying without location filter...')
-        
+
         // Fallback to all sightings
         const { data: allSightings } = await supabase
             .from('animals')
@@ -255,21 +255,21 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
             .eq('animal_type', lostAnimal.animal_type)
             .gte('spotted_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
             .limit(50)
-        
+
         if (!allSightings || allSightings.length === 0) {
             console.log('No recent sightings found at all')
             return
         }
-        
+
         console.log(`Found ${allSightings.length} sightings (fallback)`)
-        
+
         for (const sighting of allSightings) {
             console.log(`Comparing with sighting: ${sighting.id}`)
             const matchResult = await analyzeMatch(supabase, lostAnimal, sighting)
 
             if (matchResult && matchResult.confidence >= 80) {
                 console.log(`✅ MATCH FOUND! Confidence: ${matchResult.confidence}%`)
-                
+
                 const { error: insertError } = await supabase
                     .from('lost_animal_matches')
                     .insert({
@@ -278,7 +278,7 @@ async function matchLostAnimalWithSightings(supabase: any, lostAnimalId: string)
                         confidence_score: matchResult.confidence,
                         match_reason: matchResult.reason,
                     })
-                
+
                 if (!insertError) {
                     await sendMatchNotification(supabase, lostAnimal, sighting, matchResult.confidence)
                 }
@@ -326,6 +326,33 @@ async function analyzeMatch(
     sighting: any
 ): Promise<{ confidence: number; reason: string } | null> {
     try {
+        // Pre-check: Animal types must match
+        if (lostAnimal.animal_type !== sighting.animal_type) {
+            console.log(`Type mismatch: ${lostAnimal.animal_type} vs ${sighting.animal_type}`);
+            return { confidence: 0, reason: 'Different animal types (cat vs dog)' };
+        }
+
+        // Pre-check: If colors are explicitly different, skip AI call
+        if (lostAnimal.color && sighting.color) {
+            const lostColor = lostAnimal.color.toLowerCase();
+            const sightingColor = sighting.color.toLowerCase();
+            
+            // Check for obvious color mismatches
+            const colorMismatches = [
+                ['white', 'orange'], ['white', 'black'], ['white', 'brown'],
+                ['black', 'white'], ['black', 'orange'], 
+                ['orange', 'white'], ['orange', 'black'],
+            ];
+            
+            for (const [color1, color2] of colorMismatches) {
+                if ((lostColor.includes(color1) && sightingColor.includes(color2)) ||
+                    (lostColor.includes(color2) && sightingColor.includes(color1))) {
+                    console.log(`Color mismatch: ${lostColor} vs ${sightingColor}`);
+                    return { confidence: 0, reason: `Different colors: ${lostColor} vs ${sightingColor}` };
+                }
+            }
+        }
+
         // Use OpenAI to compare the images and descriptions
         const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -345,7 +372,7 @@ async function analyzeMatch(
                         content: [
                             {
                                 type: 'text',
-                                text: `You are comparing two animal photos to determine if they are the same animal.
+                                text: `You are comparing two animal photos to determine if they are the EXACT SAME individual animal.
 
 LOST ANIMAL (Photo 1):
 - Name: ${lostAnimal.name}
@@ -361,17 +388,28 @@ SIGHTING (Photo 2):
 - Color: ${sighting.color || 'Unknown'}
 - Description: ${sighting.description || 'No description'}
 
-INSTRUCTIONS:
-1. Carefully examine both photos
-2. Compare physical features: coat color/pattern, facial features, body size, distinctive markings
-3. Consider the descriptions and features listed
-4. Determine if these could be the same animal
+CRITICAL MATCHING RULES - FOLLOW THESE EXACTLY:
+1. SPECIES MUST MATCH: If one is a DOG and the other is a CAT, confidence MUST be 0%. DOGS AND CATS ARE NEVER THE SAME ANIMAL.
+2. COLOR MUST MATCH: If one is white and the other is orange/brown/tabby, confidence MUST be 0%
+3. PATTERN MUST MATCH: Solid color vs striped/tabby is NOT a match
+4. SIZE MUST BE SIMILAR: A kitten cannot match an adult cat
+5. DISTINCTIVE MARKINGS: Unique markings (spots, patches) must be present in both
+6. BE VERY STRICT: Only high confidence (80%+) if you are certain it's the same individual animal
+7. IF ANIMAL TYPES DON'T MATCH (cat vs dog), IMMEDIATELY return confidence: 0
+
+EXAMINE CAREFULLY:
+- Primary coat color (white, black, orange, gray, brown, etc.)
+- Patterns (solid, tabby stripes, calico patches, tuxedo markings)
+- Facial features and markings
+- Eye color if visible
+- Body size and build
+- Any unique identifying marks
 
 Return ONLY valid JSON (no markdown, no extra text):
 {
   "isMatch": true or false,
   "confidence": number from 0 to 100,
-  "reason": "detailed explanation comparing specific visual features"
+  "reason": "detailed explanation comparing specific visual features, especially color"
 }`,
                             },
                             {
@@ -403,9 +441,9 @@ Return ONLY valid JSON (no markdown, no extra text):
 
         const result = await openaiResponse.json()
         const content = result.choices[0].message.content
-        
+
         console.log('OpenAI response content:', content)
-        
+
         // Try to extract JSON from the response
         let analysis
         try {

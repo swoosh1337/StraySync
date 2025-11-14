@@ -2,7 +2,7 @@
   "expo": {
     "name": "StraySync",
     "slug": "stray-cat-finder",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/stary-icon-removebg-preview.png",
     "userInterfaceStyle": "light",
@@ -12,19 +12,24 @@
       "backgroundColor": "#D0F0C0"
     },
     "assetBundlePatterns": ["**/*"],
+    "scheme": "straysync",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.igrigolia.stray",
-      "requireFullScreen": true, // Add this as a top-level iOS key
+      "requireFullScreen": true,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "UIRequiredDeviceCapabilities": ["armv7", "arm64"],
         "UIDeviceFamily": [1],
         "UISupportedInterfaceOrientations~iphone": ["UIInterfaceOrientationPortrait"],
-        "UISupportedInterfaceOrientations": [], // Explicitly empty to override defaults
-        "UISupportedInterfaceOrientations~ipad": [], // Explicitly empty to disable iPad
+        "UISupportedInterfaceOrientations": [],
+        "UISupportedInterfaceOrientations~ipad": [],
         "LSRequiresIPhoneOS": true,
-        "UIRequiresFullScreen": true
+        "UIRequiresFullScreen": true,
+        "NSCameraUsageDescription": "StraySync needs access to your camera to take photos of stray animals you find.",
+        "NSPhotoLibraryUsageDescription": "StraySync needs access to your photo library to select photos of stray animals.",
+        "NSPhotoLibraryAddUsageDescription": "StraySync needs permission to save photos to your library."
       }
     },
     "android": {

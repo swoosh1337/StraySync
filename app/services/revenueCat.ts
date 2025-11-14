@@ -41,6 +41,17 @@ export interface DonationTier {
 class RevenueCatService {
   private initialized = false;
   private currentUserId: string | null = null;
+  private isAvailable = false;
+
+  private checkAvailability(): boolean {
+    if (!Purchases || !this.isAvailable) {
+      if (__DEV__) {
+        console.warn('[RevenueCat] SDK not available');
+      }
+      return false;
+    }
+    return true;
+  }
 
   /**
    * Initialize RevenueCat SDK
@@ -77,6 +88,7 @@ class RevenueCatService {
       await Purchases.configure({ apiKey });
 
       this.initialized = true;
+      this.isAvailable = true;
 
       // Identify user if provided
       if (userId) {
@@ -99,6 +111,12 @@ class RevenueCatService {
     try {
       if (!this.initialized) {
         await this.initialize();
+      }
+
+      // Ensure Purchases SDK is available before proceeding
+      if (!this.checkAvailability()) {
+        console.warn('[RevenueCat] Purchases unavailable; skipping user identification');
+        return;
       }
 
       if (this.currentUserId === userId) {
@@ -128,6 +146,9 @@ class RevenueCatService {
         await this.initialize();
       }
 
+      // Guard: ensure Purchases is available and configured
+      if (!this.checkAvailability()) return null;
+
       const offerings = await Purchases.getOfferings();
       return offerings;
     } catch (error) {
@@ -147,6 +168,10 @@ class RevenueCatService {
     try {
       if (!this.initialized) {
         await this.initialize();
+      }
+
+      if (!this.checkAvailability()) {
+        return { success: false, error: 'UNAVAILABLE' };
       }
 
       if (__DEV__) {
@@ -179,8 +204,8 @@ class RevenueCatService {
       // Make purchase
       const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
 
-      // Update Supabase
-      if (customerInfo.entitlements.active['supporter']) {
+      // Update Supabase (null-safe check)
+      if (customerInfo?.entitlements?.active?.['supporter']) {
         await this.updateSupporterStatus(true);
       }
 
@@ -206,8 +231,12 @@ class RevenueCatService {
         await this.initialize();
       }
 
+      if (!this.checkAvailability()) {
+        return false;
+      }
+
       const customerInfo = await Purchases.getCustomerInfo();
-      return customerInfo.entitlements.active[entitlementId] !== undefined;
+      return Boolean(customerInfo?.entitlements?.active?.[entitlementId]);
     } catch (error) {
       console.error('[RevenueCat] Error checking entitlement:', error);
       return false;
@@ -230,8 +259,12 @@ class RevenueCatService {
         console.log('[RevenueCat] Restoring purchases...');
       }
 
+      if (!this.checkAvailability()) {
+        return { success: false, hasActiveEntitlement: false };
+      }
+
       const customerInfo = await Purchases.restorePurchases();
-      const hasActiveEntitlement = customerInfo.entitlements.active['supporter'] !== undefined;
+      const hasActiveEntitlement = !!customerInfo?.entitlements?.active?.['supporter'];
 
       if (hasActiveEntitlement) {
         await this.updateSupporterStatus(true);
@@ -288,8 +321,12 @@ class RevenueCatService {
           .eq('id', user.id)
           .single();
 
-        if (!profile?.is_supporter) {
+        if (profile && !profile.is_supporter) {
           updateData.supporter_since = new Date().toISOString();
+        } else if (!profile) {
+          if (__DEV__) {
+            console.warn('[RevenueCat] Profile not found; not setting supporter_since');
+          }
         }
       }
 
@@ -323,6 +360,10 @@ class RevenueCatService {
         console.log('[RevenueCat] Logging out user');
       }
 
+      if (!this.checkAvailability()) {
+        return;
+      }
+
       await Purchases.logOut();
       this.currentUserId = null;
     } catch (error) {
@@ -338,7 +379,9 @@ class RevenueCatService {
       if (!this.initialized) {
         await this.initialize();
       }
-
+      if (!this.checkAvailability()) {
+        return null;
+      }
       return await Purchases.getCustomerInfo();
     } catch (error) {
       console.error('[RevenueCat] Error getting customer info:', error);

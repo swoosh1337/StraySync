@@ -127,6 +127,13 @@ const AnimalsListScreen: React.FC = () => {
       
       // Filter by distance if user location is available
       if (userLocation) {
+        console.log('[AnimalsListScreen] User location:', userLocation);
+        console.log('[AnimalsListScreen] Search radius:', searchRadius, 'km');
+        console.log('[AnimalsListScreen] Animals before distance filter:', fetchedAnimals.length);
+        
+        const beforeFilter = fetchedAnimals.length;
+        const allAnimals = [...fetchedAnimals]; // Keep a copy
+        
         fetchedAnimals = fetchedAnimals.filter(animal => {
           const distance = locationService.calculateDistance(
             userLocation.latitude,
@@ -134,9 +141,30 @@ const AnimalsListScreen: React.FC = () => {
             animal.latitude,
             animal.longitude
           );
-          return distance <= searchRadius;
+          const withinRadius = distance <= searchRadius;
+          if (!withinRadius && __DEV__) {
+            console.log(`[AnimalsListScreen] Animal ${animal.id} is ${distance.toFixed(2)}km away (outside ${searchRadius}km radius)`);
+          }
+          return withinRadius;
         });
+        
+        console.log('[AnimalsListScreen] Animals after distance filter:', fetchedAnimals.length);
+        
+        if (fetchedAnimals.length === 0 && beforeFilter > 0) {
+          console.warn('[AnimalsListScreen] All animals filtered out by distance! Increase search radius in Settings to see more animals.');
+        }
+      } else {
+        console.log('[AnimalsListScreen] No user location, showing all animals');
       }
+      
+      // Filter out any invalid animals (missing required fields)
+      fetchedAnimals = fetchedAnimals.filter(animal => {
+        const isValid = animal.id && animal.image_url && animal.latitude && animal.longitude;
+        if (!isValid && __DEV__) {
+          console.warn('[AnimalsListScreen] Filtering out invalid animal:', animal.id);
+        }
+        return isValid;
+      });
       
       // Cache the results (2 minutes TTL for animals list)
       cache.set(cacheKey, fetchedAnimals, 2 * 60 * 1000);
@@ -160,7 +188,7 @@ const AnimalsListScreen: React.FC = () => {
 
   useEffect(() => {
     fetchAnimals(false); // Use cache if available
-  }, [fetchAnimals, animalFilter, statusFilter]);
+  }, [fetchAnimals]);
 
   // Re-apply filters when advanced filters change
   useEffect(() => {

@@ -168,18 +168,11 @@ const SignInScreen: React.FC<SignInScreenProps> = ({
             By signing in, you agree to our{' '}
             <Text
               style={styles.privacyLink}
-              onPress={() => Linking.openURL('https://straysync.app/terms')}
-            >
-              Terms of Service
-            </Text>
-            {' '}and{' '}
-            <Text
-              style={styles.privacyLink}
-              onPress={() => Linking.openURL('https://straysync.app/privacy')}
+              onPress={() => Linking.openURL('https://docs.google.com/document/d/1cU88q4LfuMV9RhJ1ArmMMfz33mZAGiLz-Q3xuQ1B99U/edit?usp=sharing')}
             >
               Privacy Policy
             </Text>
-            . We'll never post without your permission.
+            . We respect your privacy and will never post without your permission.
           </Text>
         </View>
       </View>

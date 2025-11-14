@@ -2,6 +2,8 @@ import 'react-native-url-polyfill/auto';
 import { locationService } from './location';
 // Import the shared Supabase client instead of creating a new one
 import { supabase } from './api/supabaseClient';
+import { cache, CACHE_KEYS } from './cache';
+import { ratingService } from './rating';
 
 // Re-export the supabase client for backward compatibility
 export { supabase };
@@ -201,6 +203,9 @@ export const catService = {
         
         if (!error) {
           console.log('Successfully added to animals table:', data.id);
+          // Track action for rating prompt
+          ratingService.incrementActions();
+          ratingService.promptForRating();
           return data;
         }
         
@@ -462,111 +467,70 @@ export const catService = {
     }
   },
 
-  // Get all rescued animals
+  // Parameterized rescued animals getter to avoid duplication
+  async getRescuedAnimalsByType(animalType?: 'cat' | 'dog'): Promise<Cat[]> {
+    try {
+      // Base query from animals table
+      let query = supabase
+        .from('animals')
+        .select('*')
+        .eq('is_rescued', true);
+      if (animalType) {
+        query = query.eq('animal_type', animalType);
+      }
+      const { data: animalsData, error: animalsError } = await query.order('spotted_at', { ascending: false });
+
+      if (!animalsError) {
+        console.log(`Found ${animalsData?.length || 0} rescued ${animalType ?? 'animals'}`);
+        return animalsData || [];
+      }
+
+      console.log(`Error fetching rescued ${animalType ?? 'animals'} from animals table, trying cats table:`, animalsError.message);
+
+      // Fallback to cats table
+      let fallback = supabase
+        .from('cats')
+        .select('*')
+        .eq('is_rescued', true);
+      if (animalType) {
+        fallback = fallback.eq('animal_type', animalType);
+      }
+      const { data, error } = await fallback.order('spotted_at', { ascending: false });
+
+      if (error) {
+        console.error(`Error fetching rescued ${animalType ?? 'animals'}:`, error);
+        return [];
+      }
+
+      // Ensure client-side filtering/sorting if schema lacks is_rescued or filter wasn't applied
+      const rows = Array.isArray(data) ? data : [];
+      const hasIsRescued = rows.length > 0 && Object.prototype.hasOwnProperty.call(rows[0], 'is_rescued');
+      const filtered = hasIsRescued ? rows.filter((d: any) => d?.is_rescued) : rows.filter((d: any) => d?.is_rescued);
+      const sorted = filtered.sort((a: any, b: any) => {
+        const aTime = a?.spotted_at ? new Date(a.spotted_at).getTime() : 0;
+        const bTime = b?.spotted_at ? new Date(b.spotted_at).getTime() : 0;
+        return bTime - aTime;
+      });
+
+      console.log(`Found ${sorted.length} rescued ${animalType ?? 'animals'} from cats table`);
+      return sorted;
+    } catch (error: any) {
+      console.error('Error in getRescuedAnimalsByType:', error.message || error);
+      return [];
+    }
+  },
+
+  // Thin wrappers for existing callers
   async getRescuedAnimals(): Promise<Cat[]> {
-    try {
-      // Try to use the animals table first
-      const { data: animalsData, error: animalsError } = await supabase
-        .from('animals')
-        .select('*')
-        .eq('is_rescued', true)
-        .order('spotted_at', { ascending: false });
-      
-      if (!animalsError) {
-        console.log(`Found ${animalsData?.length || 0} rescued animals`);
-        return animalsData || [];
-      }
-      
-      console.log('Error fetching rescued animals from animals table, trying cats table:', animalsError.message);
-      
-      // Fallback to cats table
-      const { data, error } = await supabase
-        .from('cats')
-        .select('*')
-        .eq('is_rescued', true)
-        .order('spotted_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching rescued animals:', error);
-        return [];
-      }
-      
-      console.log(`Found ${data?.length || 0} rescued animals from cats table`);
-      return data || [];
-    } catch (error: any) {
-      console.error('Error in getRescuedAnimals:', error.message || error);
-      return [];
-    }
+    return this.getRescuedAnimalsByType();
   },
 
-  // Get rescued cats only
   async getRescuedCats(): Promise<Cat[]> {
-    try {
-      const { data: animalsData, error: animalsError } = await supabase
-        .from('animals')
-        .select('*')
-        .eq('animal_type', 'cat')
-        .eq('is_rescued', true)
-        .order('spotted_at', { ascending: false });
-      
-      if (!animalsError) {
-        console.log(`Found ${animalsData?.length || 0} rescued cats`);
-        return animalsData || [];
-      }
-      
-      // Fallback to cats table
-      const { data, error } = await supabase
-        .from('cats')
-        .select('*')
-        .eq('animal_type', 'cat')
-        .eq('is_rescued', true)
-        .order('spotted_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching rescued cats:', error);
-        return [];
-      }
-      
-      return data || [];
-    } catch (error: any) {
-      console.error('Error in getRescuedCats:', error.message || error);
-      return [];
-    }
+    return this.getRescuedAnimalsByType('cat');
   },
 
-  // Get rescued dogs only
   async getRescuedDogs(): Promise<Cat[]> {
-    try {
-      const { data: animalsData, error: animalsError } = await supabase
-        .from('animals')
-        .select('*')
-        .eq('animal_type', 'dog')
-        .eq('is_rescued', true)
-        .order('spotted_at', { ascending: false });
-      
-      if (!animalsError) {
-        console.log(`Found ${animalsData?.length || 0} rescued dogs`);
-        return animalsData || [];
-      }
-      
-      // Fallback to cats table
-      const { data, error } = await supabase
-        .from('cats')
-        .select('*')
-        .eq('animal_type', 'dog')
-        .eq('is_rescued', true)
-        .order('spotted_at', { ascending: false });
-      
-      if (error) {
-        console.error('Error fetching rescued dogs:', error);
-        return [];
-      }
-      
-      return data || [];
-    } catch (error: any) {
-      console.error('Error in getRescuedDogs:', error.message || error);
-      return [];
-    }
+    return this.getRescuedAnimalsByType('dog');
   },
   
   // Get cat sightings within a specific time frame (in hours)
@@ -1126,10 +1090,67 @@ export const catService = {
       }
       
       console.log(`Successfully deleted animal ${id} from animals table`);
+      
+      // Invalidate and re-cache all animal lists
+      await this.refreshAnimalCaches();
+      
       return true;
     } catch (error: any) {
       console.error('Error in deleteCat:', error.message || error);
       return false;
+    }
+  },
+
+  // Refresh all animal caches after data changes
+  async refreshAnimalCaches(): Promise<void> {
+    try {
+      console.log('[CatService] Refreshing animal caches after data changes...');
+      
+      // Invalidate all existing animal list caches
+      cache.invalidatePattern('animals:list');
+      
+      // Re-fetch and re-cache all common filter combinations
+      const filterCombinations = [
+        { animalFilter: 'all', statusFilter: 'active' },
+        { animalFilter: 'cats', statusFilter: 'active' },
+        { animalFilter: 'dogs', statusFilter: 'active' },
+        { animalFilter: 'all', statusFilter: 'rescued' },
+        { animalFilter: 'cats', statusFilter: 'rescued' },
+        { animalFilter: 'dogs', statusFilter: 'rescued' },
+      ];
+      
+      for (const { animalFilter, statusFilter } of filterCombinations) {
+        let fetchedAnimals: Cat[] = [];
+        
+        // Fetch based on status and animal type filters
+        if (statusFilter === 'rescued') {
+          if (animalFilter === 'all') {
+            fetchedAnimals = await this.getRescuedAnimals();
+          } else if (animalFilter === 'cats') {
+            fetchedAnimals = await this.getRescuedCats();
+          } else if (animalFilter === 'dogs') {
+            fetchedAnimals = await this.getRescuedDogs();
+          }
+        } else {
+          if (animalFilter === 'all') {
+            fetchedAnimals = await this.getCats();
+          } else if (animalFilter === 'cats') {
+            fetchedAnimals = await this.getCatsOnly();
+          } else if (animalFilter === 'dogs') {
+            fetchedAnimals = await this.getDogsOnly();
+          }
+        }
+        
+        // Re-cache with 2 minute TTL
+        const cacheKey = `${CACHE_KEYS.ANIMALS_LIST(animalFilter)}_${statusFilter}`;
+        cache.set(cacheKey, fetchedAnimals, 2 * 60 * 1000);
+        
+        console.log(`[CatService] Re-cached ${fetchedAnimals.length} animals for ${animalFilter}/${statusFilter}`);
+      }
+      
+      console.log('[CatService] Successfully refreshed all animal caches');
+    } catch (error) {
+      console.error('[CatService] Error refreshing animal caches:', error);
     }
   },
   
@@ -1651,6 +1672,11 @@ export const catService = {
       console.log(`✅ Successfully recorded ${actionType} action`);
 
       // If rescued, the trigger will automatically update the animal's is_rescued flag
+      // Invalidate and refresh caches when an animal is rescued
+      if (actionType === 'rescued') {
+        await this.refreshAnimalCaches();
+      }
+      
       return true;
     } catch (error: any) {
       console.error(`Error in recordAction:`, error.message || error);

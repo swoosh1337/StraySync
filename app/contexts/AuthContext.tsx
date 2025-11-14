@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { Linking } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '../services/api/supabaseClient';
 import { profileCache } from '../services/profileCache';
+
+// Complete the WebBrowser session when the component unmounts
+WebBrowser.maybeCompleteAuthSession();
 
 // Profile type matching our database schema
 export type UserProfile = {
@@ -167,7 +171,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+      if (error) {
+        // If we have an invalid refresh token, clear the session
+        if (error.message?.includes('Refresh Token') || error.message?.includes('Invalid')) {
+          console.log('[AuthContext] Clearing invalid session');
+          try {
+            await supabase.auth.signOut({ scope: 'local' }); // Clear local storage only
+          } catch (e) {
+            // Ignore errors when clearing
+          }
+        }
+        console.log('[AuthContext] No valid session found, user needs to sign in');
+      }
+
       if (__DEV__) {
         console.log('[AuthContext] Initial session:', session ? 'Found' : 'None');
       }
@@ -180,6 +197,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         fetchProfile(session.user.id);
       }
 
+      setIsLoading(false);
+    }).catch(async (err) => {
+      console.log('[AuthContext] Session error, clearing local state');
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (e) {
+        // Ignore
+      }
       setIsLoading(false);
     });
 
@@ -314,10 +339,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log('[AuthContext] Initiating Google sign-in...');
       }
 
+      const redirectUrl = 'straysync://';
+
+      console.log('[AuthContext] Using redirect URL:', JSON.stringify(redirectUrl));
+      console.log('[AuthContext] Redirect URL length:', redirectUrl.length);
+      console.log('[AuthContext] Redirect URL has leading spaces:', redirectUrl !== redirectUrl.trim());
+
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: 'straysync://',
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
       });
 
@@ -326,13 +362,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw error;
       }
 
-      // Open OAuth URL in browser
+      // Open OAuth URL in in-app browser (Safari View Controller on iOS)
       if (data?.url) {
-        const supported = await Linking.canOpenURL(data.url);
-        if (supported) {
-          await Linking.openURL(data.url);
-        } else {
-          throw new Error('Cannot open OAuth URL');
+        console.log('[AuthContext] Opening OAuth URL:', data.url.substring(0, 100) + '...');
+
+        const result = await WebBrowser.openAuthSessionAsync(
+          data.url,
+          redirectUrl
+        );
+        
+        if (result.type === 'success' && result.url) {
+          // Extract the URL params and create session
+          const url = new URL(result.url);
+          const params = new URLSearchParams(url.hash.substring(1));
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+          
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+          }
+        } else if (result.type === 'cancel') {
+          throw new Error('Sign-in cancelled');
         }
       }
     } catch (error) {
@@ -354,6 +407,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         provider: 'apple',
         options: {
           redirectTo: 'straysync://',
+          skipBrowserRedirect: true,
+          queryParams: {
+            scope: 'email name',
+          },
         },
       });
 
@@ -362,13 +419,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw error;
       }
 
-      // Open OAuth URL in browser
+      // Open OAuth URL in in-app browser (Safari View Controller on iOS)
       if (data?.url) {
-        const supported = await Linking.canOpenURL(data.url);
-        if (supported) {
-          await Linking.openURL(data.url);
-        } else {
-          throw new Error('Cannot open OAuth URL');
+        const result = await WebBrowser.openAuthSessionAsync(
+          data.url,
+          'straysync://'
+        );
+        
+        if (result.type === 'success' && result.url) {
+          // Extract the URL params and create session
+          const url = new URL(result.url);
+          const params = new URLSearchParams(url.hash.substring(1));
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+          
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+          }
+        } else if (result.type === 'cancel') {
+          throw new Error('Sign-in cancelled');
         }
       }
     } catch (error) {

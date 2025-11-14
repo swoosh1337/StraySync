@@ -20,6 +20,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { PetALogCollection, createSticker, AnimalSticker as AnimalStickerType, createCollectionPage } from '../types/petalog';
 import { petalogService } from '../services/petalogService';
 import AnimalSticker from '../components/AnimalSticker';
+import DottedBackground from '../components/DottedBackground';
 import { CANVAS_CONSTANTS } from '../types/petalog';
 import { backgroundRemovalService } from '../services/backgroundRemoval';
 
@@ -144,10 +145,8 @@ const PetALogScreen: React.FC = () => {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
 
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Needed',
-          'We need camera access to add photos to your collection.'
-        );
+        // Respect user's decision - don't show alert asking to reconsider
+        console.log('[PetALog] Camera permission denied by user');
         return;
       }
 
@@ -173,10 +172,8 @@ const PetALogScreen: React.FC = () => {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (status !== 'granted') {
-        Alert.alert(
-          'Permission Needed',
-          'We need photo library access to add photos.'
-        );
+        // Respect user's decision - don't show alert asking to reconsider
+        console.log('[PetALog] Photo library permission denied by user');
         return;
       }
 
@@ -352,8 +349,16 @@ const PetALogScreen: React.FC = () => {
           {collection.pages.map((page, pageIndex) => (
             <View
               key={page.id}
-              style={[styles.canvas, { backgroundColor: page.backgroundColor }]}
+              style={styles.canvas}
             >
+              {/* Dotted background pattern */}
+              <DottedBackground
+                backgroundColor={page.backgroundColor}
+                dotColor="#BDBDBD"
+                dotSize={1.5}
+                dotSpacing={20}
+              />
+
               {page.stickers.length === 0 ? (
                 <View style={styles.emptyState}>
                   <Ionicons name="images-outline" size={64} color="#BDBDBD" />

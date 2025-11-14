@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,9 @@ import {
   ScrollView,
   SafeAreaView,
   Share,
+  KeyboardAvoidingView,
+  Platform,
+  Linking,
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -26,6 +29,8 @@ import { CommentsSection } from '../components/CommentsSection';
 import { commentService } from '../services/comments';
 import { COLORS } from '../styles/theme';
 import { favoritesService } from '../services/favorites';
+import BottomSheet, { BottomSheetScrollView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 type CatDetailsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -55,11 +60,26 @@ const CatDetailsScreen: React.FC = () => {
   const [commentCount, setCommentCount] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
   const [favoriteCount, setFavoriteCount] = useState(0);
-  const [rescueModalVisible, setRescueModalVisible] = useState(false);
   const [rescuerName, setRescuerName] = useState('');
   const [rescuerPhone, setRescuerPhone] = useState('');
   const [rescuerEmail, setRescuerEmail] = useState('');
   const [rescueNotes, setRescueNotes] = useState('');
+  
+  // Bottom sheet ref and snap points
+  const rescueBottomSheetRef = useRef<BottomSheet>(null);
+  const snapPoints = useMemo(() => ['90%'], []);
+  
+  // Backdrop component
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+      />
+    ),
+    []
+  );
 
 
 
@@ -80,8 +100,18 @@ const CatDetailsScreen: React.FC = () => {
         const animalDetails = await catService.getCatById(animalId);
         if (!animalDetails) {
           console.error('Animal not found');
-          Alert.alert('Error', 'Animal not found');
+          
+          // Invalidate animals list cache so it refreshes
+          const { cache } = await import('../services/cache');
+          cache.invalidatePattern('animals:list');
+          console.log('[CatDetails] Invalidated animals list cache');
+          
+          // Go back immediately without alert to avoid showing error screen
           navigation.goBack();
+          // Show toast-style message after navigation
+          setTimeout(() => {
+            Alert.alert('Animal Not Found', 'This animal may have been removed or is no longer available.');
+          }, 300);
           return;
         }
 
@@ -292,32 +322,44 @@ const CatDetailsScreen: React.FC = () => {
       return;
     }
 
-    // Show modal to collect rescuer contact info
-    setRescueModalVisible(true);
+    // Open bottom sheet to collect rescuer contact info
+    rescueBottomSheetRef.current?.expand();
   };
 
   const confirmRescue = async () => {
-    if (!rescuerName.trim()) {
+    const name = rescuerName.trim();
+    const phone = rescuerPhone.trim();
+    const email = rescuerEmail.trim();
+
+    if (!name) {
       Alert.alert('Name Required', 'Please provide your name so the owner can contact you.');
       return;
     }
 
-    if (!rescuerPhone.trim() && !rescuerEmail.trim()) {
+    if (!phone && !email) {
       Alert.alert('Contact Required', 'Please provide at least a phone number or email.');
       return;
     }
 
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+        return;
+      }
+    }
+
     try {
       setRecordingAction(true);
-      setRescueModalVisible(false);
+      rescueBottomSheetRef.current?.close();
 
       // Update animal with rescuer contact info
       const { error } = await supabase
         .from('animals')
         .update({
-          rescuer_name: rescuerName,
-          rescuer_phone: rescuerPhone || null,
-          rescuer_email: rescuerEmail || null,
+          rescuer_name: name,
+          rescuer_phone: phone || null,
+          rescuer_email: email || null,
           rescue_notes: rescueNotes || null,
         })
         .eq('id', animal.id);
@@ -558,7 +600,7 @@ const CatDetailsScreen: React.FC = () => {
                           `Call ${animal.rescuer_name}?`,
                           [
                             { text: 'Cancel', style: 'cancel' },
-                            { text: 'Call', onPress: () => require('react-native').Linking.openURL(phoneUrl) }
+                            { text: 'Call', onPress: () => Linking.openURL(phoneUrl) }
                           ]
                         );
                       }}
@@ -574,7 +616,7 @@ const CatDetailsScreen: React.FC = () => {
                       style={styles.rescuerRow}
                       onPress={() => {
                         const emailUrl = `mailto:${animal.rescuer_email}`;
-                        require('react-native').Linking.openURL(emailUrl);
+                        Linking.openURL(emailUrl);
                       }}
                     >
                       <Ionicons name="mail" size={18} color="#4CAF50" />
@@ -834,87 +876,97 @@ const CatDetailsScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Rescue Contact Modal */}
-      <Modal
-        visible={rescueModalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setRescueModalVisible(false)}
+      {/* Rescue Contact Bottom Sheet */}
+      <BottomSheet
+        ref={rescueBottomSheetRef}
+        index={-1}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        keyboardBehavior="extend"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
+        enableDynamicSizing={false}
       >
-        <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={styles.modalScrollContent}>
-            <View style={styles.modalContent}>
-              <Ionicons name="heart-circle" size={48} color="#4CAF50" style={{ alignSelf: 'center', marginBottom: 12 }} />
-              <Text style={styles.modalTitle}>Rescue Contact Info</Text>
-              <Text style={styles.modalSubtitle}>
-                Provide your contact info so the owner can reach you if this is their lost pet
-              </Text>
+        <BottomSheetScrollView contentContainerStyle={styles.sheetContent}>
+          <Ionicons name="heart-circle" size={48} color="#4CAF50" style={{ alignSelf: 'center', marginBottom: 12 }} />
+          <Text style={styles.sheetTitle}>Rescue Contact Info</Text>
+          <Text style={styles.sheetSubtitle}>
+            Provide your contact info so the owner can reach you if this is their lost pet
+          </Text>
 
-              <Text style={styles.inputLabel}>Your Name *</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={rescuerName}
-                onChangeText={setRescuerName}
-                placeholder="Enter your name"
-                autoCapitalize="words"
-              />
+          <Text style={styles.inputLabel}>Your Name *</Text>
+          <TextInput
+            style={styles.sheetInput}
+            value={rescuerName}
+            onChangeText={setRescuerName}
+            placeholder="Enter your name"
+            autoCapitalize="words"
+            editable={!recordingAction}
+          />
 
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={rescuerPhone}
-                onChangeText={setRescuerPhone}
-                placeholder="Enter phone number"
-                keyboardType="phone-pad"
-              />
+          <Text style={styles.inputLabel}>Phone Number</Text>
+          <TextInput
+            style={styles.sheetInput}
+            value={rescuerPhone}
+            onChangeText={setRescuerPhone}
+            placeholder="Enter phone number"
+            keyboardType="phone-pad"
+            editable={!recordingAction}
+          />
 
-              <Text style={styles.inputLabel}>Email</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={rescuerEmail}
-                onChangeText={setRescuerEmail}
-                placeholder="Enter email address"
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
+          <Text style={styles.inputLabel}>Email</Text>
+          <TextInput
+            style={styles.sheetInput}
+            value={rescuerEmail}
+            onChangeText={setRescuerEmail}
+            placeholder="Enter email address"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            editable={!recordingAction}
+          />
 
-              <Text style={styles.inputLabel}>Notes (Optional)</Text>
-              <TextInput
-                style={[styles.modalInput, { height: 80 }]}
-                value={rescueNotes}
-                onChangeText={setRescueNotes}
-                placeholder="Where did you take the animal? Any other details..."
-                multiline
-                textAlignVertical="top"
-              />
+          <Text style={styles.inputLabel}>Notes (Optional)</Text>
+          <TextInput
+            style={[styles.sheetInput, { height: 80 }]}
+            value={rescueNotes}
+            onChangeText={setRescueNotes}
+            placeholder="Where did you take the animal? Any other details..."
+            multiline
+            textAlignVertical="top"
+            editable={!recordingAction}
+          />
 
-              <Text style={styles.modalHint}>
-                * At least name and one contact method required
-              </Text>
+          <Text style={styles.sheetHint}>
+            * At least name and one contact method required
+          </Text>
 
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={styles.modalCancelButton}
-                  onPress={() => setRescueModalVisible(false)}
-                >
-                  <Text style={styles.modalCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalSaveButton}
-                  onPress={confirmRescue}
-                  disabled={recordingAction}
-                >
-                  {recordingAction ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <Text style={styles.modalSaveText}>Confirm Rescue</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
+          <View style={styles.sheetButtons}>
+            <TouchableOpacity
+              style={[styles.sheetCancelButton, recordingAction && styles.buttonDisabled]}
+              onPress={() => !recordingAction && rescueBottomSheetRef.current?.close()}
+              disabled={recordingAction}
+            >
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.sheetConfirmButton}
+              onPress={confirmRescue}
+              disabled={recordingAction}
+            >
+              {recordingAction ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.sheetConfirmText}>Confirm Rescue</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {recordingAction && (
+            <View pointerEvents="auto" style={styles.processingOverlay} />
+          )}
+        </BottomSheetScrollView>
+      </BottomSheet>
     </SafeAreaView>
   );
 };
@@ -1166,6 +1218,77 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
+  },
+  sheetContent: {
+    padding: 20,
+    paddingBottom: 100,
+  },
+  sheetTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#212121',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  sheetSubtitle: {
+    fontSize: 14,
+    color: '#757575',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  sheetInput: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    backgroundColor: '#F5F5F5',
+    marginBottom: 16,
+  },
+  sheetHint: {
+    fontSize: 12,
+    color: '#757575',
+    marginBottom: 24,
+    fontStyle: 'italic',
+  },
+  sheetButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  sheetCancelButton: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+  },
+  sheetCancelText: {
+    color: '#757575',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  sheetConfirmButton: {
+    flex: 1,
+    backgroundColor: '#4CAF50',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  sheetConfirmText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  processingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    zIndex: 10,
   },
   modalTitle: {
     fontSize: 20,

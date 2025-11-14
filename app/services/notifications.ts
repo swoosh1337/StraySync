@@ -65,10 +65,17 @@ export const notificationService = {
 
       return token;
     } catch (error: any) {
-      // Silently fail in development - push notifications don't work in simulator
+      // Simulators commonly fail to provide a push token; keep friendly message
       if (__DEV__) {
         console.log('[Notifications] Push token not available (this is normal in simulator)');
       }
+      // Preserve error details for debugging/monitoring
+      try {
+        const message = error?.message ?? String(error);
+        const stack = error?.stack;
+        console.error('[Notifications] getPushToken error:', message, stack ? `\n${stack}` : '');
+        // TODO: forward to monitoring service here if configured
+      } catch {}
       return null;
     }
   },

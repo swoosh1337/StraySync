@@ -67,9 +67,15 @@ async function checkRateLimit(
       console.error(`Rate limit check error (attempt ${i + 1}):`, error)
     }
     
-    // If still failing after retries, fall back to safe default (treat as 0 to avoid false 429s)
+    // If still failing after retries, fail closed to protect the system
     if (count === null && lastError) {
-      count = 0
+      const resetAt = new Date(now.getTime() + 60 * 1000) // advise retry in 60s
+      return {
+        allowed: false,
+        remaining: 0,
+        resetAt,
+        tier: userTier,
+      }
     }
     
     // Check if limit exceeded
@@ -165,6 +171,8 @@ serve(async (req) => {
     const rateLimitResult = await checkRateLimit(supabaseClient, user.id, userTier)
 
     if (!rateLimitResult.allowed) {
+      const now = new Date()
+      const retryAfterSeconds = Math.max(1, Math.ceil((rateLimitResult.resetAt.getTime() - now.getTime()) / 1000))
       return new Response(
         JSON.stringify({
           error: 'Rate limit exceeded',
@@ -180,6 +188,7 @@ serve(async (req) => {
             'X-RateLimit-Limit': RATE_LIMITS[userTier].perDay.toString(),
             'X-RateLimit-Remaining': rateLimitResult.remaining.toString(),
             'X-RateLimit-Reset': rateLimitResult.resetAt.toISOString(),
+            'Retry-After': retryAfterSeconds.toString(),
           },
         }
       )

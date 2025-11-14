@@ -1,5 +1,4 @@
 import * as Location from 'expo-location';
-import { Alert } from 'react-native';
 
 export type LocationCoordinates = {
   latitude: number;
@@ -15,16 +14,13 @@ export const locationService = {
   // Request location permissions
   async requestPermissions(): Promise<boolean> {
     const { status } = await Location.requestForegroundPermissionsAsync();
-    
+
     if (status !== 'granted') {
-      Alert.alert(
-        'Permission Denied',
-        'Permission to access location was denied. This app needs location access to function properly.',
-        [{ text: 'OK' }]
-      );
+      // Respect user's decision - don't show alert asking to reconsider
+      console.log('[Location] Permission denied by user');
       return false;
     }
-    
+
     return true;
   },
   

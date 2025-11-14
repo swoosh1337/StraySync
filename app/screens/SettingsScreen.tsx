@@ -21,14 +21,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { cleanupService } from '../services/cleanup';
 import { useAuth } from '../contexts/AuthContext';
-
-// Safely import RevenueCat (may not be available in Expo Go)
-let Purchases: any = null;
-try {
-  Purchases = require('react-native-purchases').default;
-} catch (e) {
-  console.warn('[Settings] RevenueCat not available (Expo Go)');
-}
+import { purchaseService } from '../services/purchaseService';
+import { supabase } from '../services/api/supabaseClient';
 
 type SettingsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -53,13 +47,38 @@ const SettingsScreen: React.FC = () => {
 
   const [purchaseLoading, setPurchaseLoading] = useState<string | null>(null);
   const [isSupporter, setIsSupporter] = useState(false);
+  const [purchaseProvider, setPurchaseProvider] = useState<string>('none');
 
-  // Check supporter status
+  // Initialize purchase service and check supporter status
   useEffect(() => {
+    const initPurchases = async () => {
+      try {
+        if (purchaseService && typeof purchaseService.initialize === 'function') {
+          await purchaseService.initialize(user?.id);
+          const provider = purchaseService.getProvider();
+          setPurchaseProvider(provider);
+
+          if (__DEV__) {
+            console.log(`[Settings] Purchase provider: ${provider}`);
+          }
+        } else {
+          console.warn('[Settings] purchaseService not available');
+          setPurchaseProvider('none');
+        }
+      } catch (error) {
+        console.error('[Settings] Purchase init error:', error);
+        setPurchaseProvider('none');
+      }
+    };
+
+    initPurchases();
+
+    // Check supporter status from profile
     if (profile?.is_supporter) {
       setIsSupporter(true);
     }
-  }, [profile]);
+
+  }, [user, profile]);
 
   // Convert kilometers to miles for display
   const kmToMiles = (km: number) => {
@@ -90,10 +109,8 @@ const SettingsScreen: React.FC = () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
 
     if (status !== 'granted') {
-      Alert.alert(
-        'Permission Required',
-        'Please enable location services in your device settings to use this feature.'
-      );
+      // Respect user's decision - don't show alert asking to reconsider
+      console.log('[Settings] Location permission denied by user');
       return false;
     }
 
@@ -227,6 +244,41 @@ const SettingsScreen: React.FC = () => {
     },
   ];
 
+  const handleRestorePurchases = async () => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to restore purchases.');
+      return;
+    }
+
+    try {
+      setPurchaseLoading('restore');
+
+      const result = await purchaseService.restorePurchases(user.id);
+
+      // Clear loading immediately after getting result
+      setPurchaseLoading(null);
+
+      if (result.success && result.isSupporter) {
+        setIsSupporter(true);
+        Alert.alert(
+          '✅ Purchases Restored',
+          'Your supporter status has been restored!',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'No Purchases Found',
+          'We couldn\'t find any previous purchases to restore.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('[Settings] Restore error:', error);
+      setPurchaseLoading(null);
+      Alert.alert('Error', 'Failed to restore purchases. Please try again.');
+    }
+  };
+
   const handleDonation = async (tierId: string, productId: string) => {
     if (!user) {
       Alert.alert(
@@ -248,50 +300,78 @@ const SettingsScreen: React.FC = () => {
     try {
       setPurchaseLoading(tierId);
 
-      // In development, show a success message
-      if (__DEV__) {
+      // Check if purchase system is available
+      if (!purchaseService.isAvailable()) {
         Alert.alert(
-          '🎉 Thank You!',
-          'Donation feature is in development mode.\n\nYour support will help us:\n• Keep the app free\n• Add more features\n• Help more stray animals',
+          'Not Available',
+          'In-app purchases are not available in Expo Go.\n\n📱 To test donations, build with EAS or use TestFlight.',
           [{ text: 'OK' }]
         );
         setPurchaseLoading(null);
         return;
       }
 
-      // Production: Use RevenueCat
-      if (!Purchases) {
-        Alert.alert(
-          'Not Available',
-          'In-app purchases require a production build. Donations are coming soon!',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
+      // Make purchase via unified service (tries RevenueCat, falls back to StoreKit)
+      const result = await purchaseService.purchaseProduct(productId, user.id);
 
-      const purchaseResult = await Purchases.purchasePackage({
-        identifier: productId,
-      } as any);
+      // Clear loading immediately on success
+      setPurchaseLoading(null);
 
-      if (purchaseResult) {
+      if (result.success) {
+        setIsSupporter(result.isSupporter);
+
         Alert.alert(
           '🎉 Thank You!',
           'Your support helps us make StraySync better for everyone and helps save more stray animals!',
           [{ text: 'OK' }]
         );
-      }
-    } catch (error: any) {
-      console.error('Purchase error:', error);
+      } else if (result.error !== 'USER_CANCELLED') {
+        // Clear loading for error cases too
+        setPurchaseLoading(null);
 
-      if (error.code !== 'USER_CANCELLED') {
+        // Provide user-friendly error messages
+        let errorMessage = result.error || 'Something went wrong. Please try again later.';
+
+        // Check for common error patterns and provide helpful messages
+        if (errorMessage.includes('Product not found')) {
+          errorMessage = 'This purchase is not available yet. Please make sure you have the latest version of the app from the App Store.';
+        } else if (errorMessage.includes('Failed to fetch')) {
+          errorMessage = 'Unable to connect to the App Store. Please check your internet connection and try again.';
+        } else if (errorMessage.includes('product ID is configured')) {
+          errorMessage = 'This purchase is temporarily unavailable. Please try again later or contact support.';
+        }
+
         Alert.alert(
           'Purchase Failed',
-          'Something went wrong. Please try again later.',
+          errorMessage,
           [{ text: 'OK' }]
         );
+      } else {
+        // User cancelled - also clear loading
+        setPurchaseLoading(null);
       }
-    } finally {
+    } catch (error: any) {
+      console.error('[Settings] Purchase error:', error);
+
+      // Provide user-friendly error message based on error type
+      let errorMessage = 'Something went wrong. Please try again later.';
+      
+      if (error.message) {
+        if (error.message.includes('Product not found')) {
+          errorMessage = 'This purchase is not available yet. Please make sure you have the latest version of the app from the App Store.';
+        } else if (error.message.includes('Failed to fetch') || error.message.includes('network')) {
+          errorMessage = 'Unable to connect to the App Store. Please check your internet connection and try again.';
+        } else if (error.message.includes('Cannot read property')) {
+          errorMessage = 'There was a technical issue with the purchase. Please restart the app and try again.';
+        }
+      }
+
       setPurchaseLoading(null);
+      Alert.alert(
+        'Purchase Failed',
+        errorMessage,
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -486,14 +566,81 @@ const SettingsScreen: React.FC = () => {
         <Text style={styles.donationFooter}>
           One-time donation • All proceeds support development and animal welfare
         </Text>
+
+        {/* Restore Purchases Button */}
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={handleRestorePurchases}
+          disabled={purchaseLoading !== null}
+        >
+          {purchaseLoading === 'restore' ? (
+            <ActivityIndicator size="small" color="#4CAF50" />
+          ) : (
+            <>
+              <Ionicons name="refresh" size={16} color="#4CAF50" />
+              <Text style={styles.restoreButtonText}>Restore Purchases</Text>
+            </>
+          )}
+        </TouchableOpacity>
       </View>
+
+      {/* Account Management */}
+      {user && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+
+          <TouchableOpacity
+            style={[styles.deleteAccountButton]}
+            onPress={() => {
+              Alert.alert(
+                'Delete Account',
+                'Are you sure you want to delete your account? This will permanently remove:\n\n• Your profile and account data\n• All animal sightings you\'ve reported\n• Your favorites and Pet-a-log collection\n• All comments and interactions\n\nThis action cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete Account',
+                    style: 'destructive',
+                    onPress: async () => {
+                      try {
+                        // Delete user account from Supabase
+                        const { error } = await supabase.rpc('delete_user_account');
+
+                        if (error) {
+                          console.error('Error deleting account:', error);
+                          Alert.alert('Error', 'Failed to delete account. Please try again or contact support.');
+                          return;
+                        }
+
+                        // Sign out
+                        await supabase.auth.signOut();
+
+                        Alert.alert(
+                          'Account Deleted',
+                          'Your account has been permanently deleted.',
+                          [{ text: 'OK' }]
+                        );
+                      } catch (error) {
+                        console.error('Error deleting account:', error);
+                        Alert.alert('Error', 'Failed to delete account. Please contact support at support@straysync.com');
+                      }
+                    },
+                  },
+                ]
+              );
+            }}
+          >
+            <Ionicons name="trash-outline" size={20} color="#F44336" />
+            <Text style={styles.deleteAccountText}>Delete Account</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>About</Text>
 
         <View style={styles.aboutContainer}>
           <Text style={styles.appName}>StraySync</Text>
-          <Text style={styles.appVersion}>Version 1.1.0</Text>
+          <Text style={styles.appVersion}>Version 1.2.0</Text>
           <Text style={styles.appDescription}>
             Help locate and track stray animals in your area. Take photos, mark
             locations, and get notifications when you're near a stray animal.
@@ -665,6 +812,23 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 8,
   },
+  devButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#FF9800',
+    borderStyle: 'dashed',
+  },
+  devButtonText: {
+    color: '#FF9800',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 12,
+  },
   donationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -772,7 +936,35 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     marginTop: 8,
+    marginBottom: 12,
     fontStyle: 'italic',
+  },
+  restoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F44336',
+  },
+  deleteAccountText: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#F44336',
+    fontWeight: '500',
   },
 });
 

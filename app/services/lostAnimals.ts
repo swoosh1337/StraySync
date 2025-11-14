@@ -39,6 +39,36 @@ export interface LostAnimalMatch {
 }
 
 export const lostAnimalsService = {
+  // Simple event listeners for UI refreshes
+  _listeners: new Set<(event: any) => void>(),
+  subscribe(callback: (event: any) => void) {
+    this._listeners.add(callback);
+    return () => this._listeners.delete(callback);
+  },
+  _emit(event: any) {
+    this._listeners.forEach((cb) => {
+      try { cb(event); } catch {}
+    });
+  },
+  /**
+   * Get a single lost animal by ID (with matches view)
+   */
+  async getById(lostAnimalId: string): Promise<LostAnimal | null> {
+    try {
+      const { data, error } = await supabase
+        .from('lost_animals_with_matches')
+        .select('*')
+        .eq('id', lostAnimalId)
+        .single();
+
+      if (error) throw error;
+      return data || null;
+    } catch (error) {
+      console.error('[LostAnimals] Error fetching by id:', error);
+      return null;
+    }
+  },
+
   /**
    * Get all active lost animals
    */
@@ -137,6 +167,14 @@ export const lostAnimalsService = {
         console.error('[LostAnimals] Background match analysis failed:', err)
       );
 
+      // Track action for rating
+      import('./rating').then(({ ratingService }) => {
+        ratingService.incrementActions();
+        ratingService.promptForRating();
+      });
+
+      // Notify listeners about creation
+      this._emit({ type: 'created', record: result });
       return result;
     } catch (error) {
       console.error('[LostAnimals] Error creating post:', error);
@@ -272,6 +310,8 @@ export const lostAnimalsService = {
         .eq('id', lostAnimalId);
 
       if (error) throw error;
+      // Emit update so lists refresh deterministically
+      this._emit({ type: 'updated', record: { id: lostAnimalId, status: 'found' } });
       Alert.alert('Success', 'Marked as found! 🎉');
     } catch (error) {
       console.error('[LostAnimals] Error marking as found:', error);
@@ -290,6 +330,8 @@ export const lostAnimalsService = {
         .eq('id', lostAnimalId);
 
       if (error) throw error;
+      // Emit deletion for subscribers
+      this._emit({ type: 'deleted', id: lostAnimalId });
     } catch (error) {
       console.error('[LostAnimals] Error deleting:', error);
       throw error;

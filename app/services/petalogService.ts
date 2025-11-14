@@ -5,21 +5,21 @@ import {
   AnimalSticker,
   createInitialCollection,
 } from '../types/petalog';
+import { supabase } from './supabase';
 
-const STORAGE_KEY = '@straysync_petalog_collection';
+const STORAGE_KEY_PREFIX = '@straysync_petalog_collection';
 const SAVE_DEBOUNCE_MS = 300;
+
+// Get user-specific storage key
+async function getStorageKey(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id || 'anonymous';
+  return `${STORAGE_KEY_PREFIX}_${userId}`;
+}
 
 // Internal debounced save state
 let pendingSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let latestSerialized: string | null = null;
-
-async function flushSave() {
-  if (!latestSerialized) return;
-  await AsyncStorage.setItem(STORAGE_KEY, latestSerialized);
-  if (__DEV__) {
-    console.log('[PetALog] Collection saved (flush)');
-  }
-}
 
 /**
  * Pet-a-log Service
@@ -32,7 +32,8 @@ export const petalogService = {
    */
   async loadCollection(): Promise<PetALogCollection> {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEY);
+      const storageKey = await getStorageKey();
+      const data = await AsyncStorage.getItem(storageKey);
 
       if (!data) {
         if (__DEV__) {
@@ -57,7 +58,7 @@ export const petalogService = {
       }));
 
       if (__DEV__) {
-        console.log(`[PetALog] Loaded collection with ${collection.pages.length} pages`);
+        console.log(`[PetALog] Loaded collection with ${collection.pages.length} pages for user`);
       }
 
       return collection;
@@ -72,6 +73,7 @@ export const petalogService = {
    */
   async saveCollection(collection: PetALogCollection): Promise<void> {
     try {
+      const storageKey = await getStorageKey();
       latestSerialized = JSON.stringify(collection);
 
       // Coalesce rapid saves with debounce
@@ -80,7 +82,12 @@ export const petalogService = {
       }
       pendingSaveTimer = setTimeout(async () => {
         try {
-          await flushSave();
+          await AsyncStorage.setItem(storageKey, latestSerialized!);
+          if (__DEV__) {
+            console.log('[PetALog] Collection saved (flush)');
+          }
+        } catch (error) {
+          console.error('[PetALog] Error flushing save:', error);
         } finally {
           pendingSaveTimer = null;
         }
@@ -101,7 +108,13 @@ export const petalogService = {
       clearTimeout(pendingSaveTimer);
       pendingSaveTimer = null;
     }
-    await flushSave();
+    if (latestSerialized) {
+      const storageKey = await getStorageKey();
+      await AsyncStorage.setItem(storageKey, latestSerialized);
+      if (__DEV__) {
+        console.log('[PetALog] Collection saved (flush now)');
+      }
+    }
   },
 
   /**
@@ -266,9 +279,10 @@ export const petalogService = {
    */
   async clearAll(): Promise<void> {
     try {
-      await AsyncStorage.removeItem(STORAGE_KEY);
+      const storageKey = await getStorageKey();
+      await AsyncStorage.removeItem(storageKey);
       if (__DEV__) {
-        console.log('[PetALog] Collection cleared');
+        console.log('[PetALog] Collection cleared for current user');
       }
     } catch (error) {
       console.error('[PetALog] Error clearing collection:', error);

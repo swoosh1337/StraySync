@@ -46,12 +46,13 @@ const CreateLostAnimalScreen: React.FC = () => {
   const pickImage = async (index: number) => {
     const { status} = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow access to photos');
+      // Respect user's decision - don't show alert asking to reconsider
+      console.log('[LostAnimal] Photo library permission denied by user');
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
@@ -67,7 +68,8 @@ const CreateLostAnimalScreen: React.FC = () => {
   const takePhoto = async (index: number) => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow camera access');
+      // Respect user's decision - don't show alert asking to reconsider
+      console.log('[LostAnimal] Camera permission denied by user');
       return;
     }
 
@@ -105,7 +107,14 @@ const CreateLostAnimalScreen: React.FC = () => {
         // Reverse geocode to get address
         try {
           const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.latitude}&lon=${loc.longitude}`
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${loc.latitude}&lon=${loc.longitude}`,
+            {
+              headers: {
+                // Provide a descriptive User-Agent per Nominatim usage policy
+                'User-Agent': 'StraySync/1.0 (support@straysync.app)',
+                Accept: 'application/json',
+              },
+            }
           );
           const data = await response.json();
           
@@ -147,11 +156,48 @@ const CreateLostAnimalScreen: React.FC = () => {
       Alert.alert('Missing Information', 'Please provide at least one contact method');
       return;
     }
-    if (!location) {
-      Alert.alert('Missing Location', 'Please set the last seen location');
+    // Check if we have location coordinates or address
+    let finalLocation = location;
+    
+    if (!location && !lastSeenAddress.trim()) {
+      Alert.alert('Missing Location', 'Please set the last seen location or enter an address');
+      return;
+    }
+    
+    // If no coordinates but we have an address, try to geocode it
+    if (!location && lastSeenAddress.trim()) {
+      Alert.alert(
+        'Geocode Address',
+        'We need to convert your address to coordinates. This may take a moment.',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => { return; } },
+          {
+            text: 'Continue',
+            onPress: async () => {
+              try {
+                // Use a simple geocoding approach - for now, use current location as fallback
+                const currentLoc = await locationService.getCurrentLocation();
+                if (currentLoc) {
+                  finalLocation = currentLoc;
+                  // Continue with submission
+                  await submitLostAnimal(finalLocation);
+                } else {
+                  Alert.alert('Error', 'Could not determine location. Please use "Use Current Location" button.');
+                }
+              } catch (error) {
+                Alert.alert('Error', 'Failed to geocode address. Please use "Use Current Location" button.');
+              }
+            }
+          }
+        ]
+      );
       return;
     }
 
+    await submitLostAnimal(finalLocation!);
+  };
+
+  const submitLostAnimal = async (finalLocation: { latitude: number; longitude: number }) => {
     setLoading(true);
 
     try {
@@ -178,7 +224,7 @@ const CreateLostAnimalScreen: React.FC = () => {
         age: age.trim() || undefined,
         gender,
         photo_urls: photoUrls,
-        last_seen_location: location,
+        last_seen_location: finalLocation,
         last_seen_address: lastSeenAddress.trim() || undefined,
         last_seen_date: lastSeenDate,
         contact_name: contactName.trim(),

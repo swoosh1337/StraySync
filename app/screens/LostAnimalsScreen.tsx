@@ -13,26 +13,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
-import { lostAnimalsService } from '../services/lostAnimals';
+import { lostAnimalsService, type LostAnimal as LostAnimalRecord } from '../services/lostAnimals';
 import { cache } from '../services/cache';
 
 type LostAnimalsScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-interface LostAnimal {
-  id: string;
-  name: string;
-  animal_type: 'cat' | 'dog';
-  description: string;
-  photo_url_1: string;
-  last_seen_date: string;
-  last_seen_address: string;
-  potential_matches_count: number;
-  unviewed_matches_count: number;
-}
+// Reuse the service LostAnimal type to keep shapes aligned
 
 const LostAnimalsScreen: React.FC = () => {
   const navigation = useNavigation<LostAnimalsScreenNavigationProp>();
-  const [lostAnimals, setLostAnimals] = useState<LostAnimal[]>([]);
+  const [lostAnimals, setLostAnimals] = useState<LostAnimalRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -43,20 +33,35 @@ const LostAnimalsScreen: React.FC = () => {
   // Refresh when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      // Small delay to ensure any database writes have completed
-      const timer = setTimeout(() => {
-        loadLostAnimals();
-      }, 300);
-      
-      return () => clearTimeout(timer);
+      // Deterministic refresh on focus (no arbitrary delay)
+      loadLostAnimals();
+      return () => {};
     }, [])
   );
+
+  // Subscribe to lost-animal mutations to update list deterministically
+  useEffect(() => {
+    const unsubscribe = lostAnimalsService.subscribe((event: any) => {
+      if (event?.type === 'created' && event?.record) {
+        // Prepend the new record
+        setLostAnimals((prev) => [event.record, ...prev]);
+      } else if (event?.type === 'updated' && event?.record) {
+        setLostAnimals((prev) => prev.map((a) => (a.id === event.record.id ? { ...a, ...event.record } : a)));
+      } else if (event?.type === 'deleted' && event?.id) {
+        setLostAnimals((prev) => prev.filter((a) => a.id !== event.id));
+      } else {
+        // Fallback: reload list
+        loadLostAnimals();
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   const loadLostAnimals = async () => {
     try {
       // Check cache first
       const cacheKey = 'lost_animals:active';
-      const cached = cache.get<LostAnimal[]>(cacheKey);
+      const cached = cache.get<LostAnimalRecord[]>(cacheKey);
       
       if (cached) {
         setLostAnimals(cached);
@@ -65,7 +70,7 @@ const LostAnimalsScreen: React.FC = () => {
 
       // Fetch fresh data
       const data = await lostAnimalsService.getActiveLostAnimals();
-      setLostAnimals(data as any);
+      setLostAnimals(data);
       
       // Update cache (5 minutes TTL)
       cache.set(cacheKey, data, 5 * 60 * 1000);
@@ -82,7 +87,7 @@ const LostAnimalsScreen: React.FC = () => {
     setRefreshing(false);
   };
 
-  const renderLostAnimalCard = ({ item }: { item: LostAnimal }) => (
+  const renderLostAnimalCard = ({ item }: { item: LostAnimalRecord }) => (
     <TouchableOpacity
       style={styles.card}
       onPress={() => navigation.navigate('LostAnimalDetails', { lostAnimalId: item.id })}

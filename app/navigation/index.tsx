@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,7 +52,7 @@ const THEME = {
 
 // Current onboarding version - increment this when making significant changes to the app
 // that would require users to see the onboarding again
-const ONBOARDING_VERSION = '1.0';
+const ONBOARDING_VERSION = '2.0';
 
 // create the navigators
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -152,6 +152,10 @@ const RootNavigator = () => {
     };
 
     checkOnboarding();
+
+    // Poll for onboarding completion changes (for dev reset functionality)
+    const interval = setInterval(checkOnboarding, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   // Determine which screen to show
@@ -260,7 +264,7 @@ const RootNavigator = () => {
 };
 
 // main app container
-const Navigation = ({ navigationRef }: { navigationRef?: any }) => {
+const Navigation = ({ navigationRef }: { navigationRef?: React.RefObject<NavigationContainerRef<RootStackParamList>> }) => {
   return (
     <NavigationContainer ref={navigationRef}>
       <RootNavigator />

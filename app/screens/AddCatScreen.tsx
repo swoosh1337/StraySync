@@ -229,7 +229,8 @@ const AddCatScreen: React.FC = () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please allow access to your photo library to select an image.');
+      // Respect user's decision - don't show alert asking to reconsider
+      console.log('[AddCat] Photo library permission denied by user');
       return;
     }
 
@@ -252,7 +253,8 @@ const AddCatScreen: React.FC = () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
 
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please allow access to your camera to take a photo.');
+      // Respect user's decision - don't show alert asking to reconsider
+      console.log('[AddCat] Camera permission denied by user');
       return;
     }
 
@@ -658,7 +660,7 @@ const AddCatScreen: React.FC = () => {
                   {analyzing && (
                     <View style={styles.analyzingOverlay}>
                       <ActivityIndicator size="large" color="#fff" />
-                      <Text style={styles.analyzingText}>🤖 Analyzing with AI...</Text>
+                      <Text style={styles.analyzingText}> Analyzing...</Text>
                     </View>
                   )}
                   <TouchableOpacity
